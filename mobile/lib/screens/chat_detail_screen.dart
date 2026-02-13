@@ -486,11 +486,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: _avatarGradient,
-                ),
+                color: _avatarGradient[0],
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
@@ -858,17 +854,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    gradient: _isSending
-                        ? null
-                        : const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              CoffeeColors.terracotta,
-                              CoffeeColors.caramelBronze,
-                            ],
-                          ),
-                    color: _isSending ? CoffeeColors.steamMilk : null,
+                    color: _isSending
+                        ? CoffeeColors.steamMilk
+                        : const Color(0xFF4A3529),
                     shape: BoxShape.circle,
                     boxShadow: _isSending
                         ? []
@@ -1103,11 +1091,7 @@ class _MessageBubble extends StatelessWidget {
                 width: 30,
                 height: 30,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: avatarGradient,
-                  ),
+                  color: avatarGradient[0],
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -1136,17 +1120,9 @@ class _MessageBubble extends StatelessWidget {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                gradient: isSentByMe
-                    ? const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          CoffeeColors.terracotta,
-                          CoffeeColors.caramelBronze,
-                        ],
-                      )
-                    : null,
-                color: isSentByMe ? null : CoffeeColors.latteCream,
+                color: isSentByMe
+                    ? const Color(0xFF4A3529)
+                    : CoffeeColors.latteCream,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),

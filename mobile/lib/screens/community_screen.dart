@@ -220,12 +220,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        CoffeeColors.terracotta,
-                        CoffeeColors.caramelBronze,
-                      ],
-                    ),
+                    color: const Color(0xFF4A3529),
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
@@ -262,12 +257,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        CoffeeColors.terracotta,
-                        CoffeeColors.caramelBronze,
-                      ],
-                    ),
+                    color: const Color(0xFF4A3529),
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
@@ -464,11 +454,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.white.withValues(alpha: 0.95), CoffeeColors.milkFoam],
-        ),
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
@@ -489,12 +475,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      CoffeeColors.terracotta,
-                      CoffeeColors.caramelBronze,
-                    ],
-                  ),
+                  color: const Color(0xFF4A3529),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -723,11 +704,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.white.withValues(alpha: 0.98), CoffeeColors.milkFoam],
-        ),
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
@@ -753,12 +730,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          CoffeeColors.terracotta,
-                          CoffeeColors.caramelBronze,
-                        ],
-                      ),
+                      color: const Color(0xFF4A3529),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -879,13 +851,8 @@ class _CommunityScreenState extends State<CommunityScreen>
                         child: Container(
                           height: 88,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                CoffeeColors.darkRoast.withValues(alpha: 0.82),
-                              ],
+                            color: CoffeeColors.darkRoast.withValues(
+                              alpha: 0.78,
                             ),
                           ),
                         ),
@@ -1224,9 +1191,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [CoffeeColors.terracotta, CoffeeColors.caramelBronze],
-          ),
+          color: const Color(0xFF4A3529),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -1499,12 +1464,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                CoffeeColors.terracotta,
-                                CoffeeColors.caramelBronze,
-                              ],
-                            ),
+                            color: const Color(0xFF4A3529),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Center(
@@ -1825,12 +1785,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              CoffeeColors.terracotta,
-                              CoffeeColors.caramelBronze,
-                            ],
-                          ),
+                          color: const Color(0xFF4A3529),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Center(
@@ -1952,15 +1907,9 @@ class _CommunityScreenState extends State<CommunityScreen>
                     width: 80,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      gradient: isAllSelected
-                          ? LinearGradient(
-                              colors: [
-                                CoffeeColors.terracotta,
-                                CoffeeColors.caramelBronze,
-                              ],
-                            )
-                          : null,
-                      color: isAllSelected ? null : AppTheme.surface,
+                      color: isAllSelected
+                          ? const Color(0xFF4A3529)
+                          : AppTheme.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: isAllSelected
                           ? null
@@ -2015,17 +1964,9 @@ class _CommunityScreenState extends State<CommunityScreen>
                   width: 80,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    gradient: isSelected
-                        ? const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              CoffeeColors.terracotta,
-                              CoffeeColors.caramelBronze,
-                            ],
-                          )
-                        : null,
-                    color: isSelected ? null : AppTheme.surface,
+                    color: isSelected
+                        ? const Color(0xFF4A3529)
+                        : AppTheme.surface,
                     borderRadius: BorderRadius.circular(16),
                     border: isSelected
                         ? null
@@ -2109,11 +2050,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.white.withValues(alpha: 0.98), CoffeeColors.milkFoam],
-        ),
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
@@ -2181,12 +2118,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            CoffeeColors.terracotta,
-                            CoffeeColors.caramelBronze,
-                          ],
-                        ),
+                        color: const Color(0xFF4A3529),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Row(
@@ -2264,12 +2196,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      CoffeeColors.terracotta,
-                      CoffeeColors.caramelBronze,
-                    ],
-                  ),
+                  color: const Color(0xFF4A3529),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -2766,12 +2693,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          CoffeeColors.terracotta,
-                          CoffeeColors.caramelBronze,
-                        ],
-                      ),
+                      color: const Color(0xFF4A3529),
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
@@ -2898,11 +2820,7 @@ class _CommunityScreenState extends State<CommunityScreen>
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: avatarColors[colorIndex],
-                ),
+                color: avatarColors[colorIndex][0],
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
@@ -3003,12 +2921,7 @@ class _CommunityScreenState extends State<CommunityScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      CoffeeColors.terracotta,
-                      CoffeeColors.caramelBronze,
-                    ],
-                  ),
+                  color: const Color(0xFF4A3529),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(

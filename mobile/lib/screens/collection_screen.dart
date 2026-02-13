@@ -171,14 +171,18 @@ class _CollectionScreenState extends State<CollectionScreen>
       final query = _searchQuery.toLowerCase();
       switch (_searchType) {
         case 'actor':
-          return movie.actors.any((actor) => actor.toLowerCase().contains(query)) ||
-                 movie.title.fr.toLowerCase().contains(query);
+          return movie.actors.any(
+                (actor) => actor.toLowerCase().contains(query),
+              ) ||
+              movie.title.fr.toLowerCase().contains(query);
         case 'director':
           // Note: directors n'est pas dans le modèle, on cherche dans le titre pour l'instant
           return movie.title.fr.toLowerCase().contains(query);
         case 'genre':
-          return movie.genres.any((genre) => genre.toLowerCase().contains(query)) ||
-                 movie.title.fr.toLowerCase().contains(query);
+          return movie.genres.any(
+                (genre) => genre.toLowerCase().contains(query),
+              ) ||
+              movie.title.fr.toLowerCase().contains(query);
         case 'title':
         default:
           return movie.title.fr.toLowerCase().contains(query);
@@ -206,10 +210,8 @@ class _CollectionScreenState extends State<CollectionScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => EditRatingModal(
-        movie: movie,
-        onUpdated: _loadCollection,
-      ),
+      builder: (context) =>
+          EditRatingModal(movie: movie, onUpdated: _loadCollection),
     );
   }
 
@@ -261,11 +263,24 @@ class _CollectionScreenState extends State<CollectionScreen>
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Collection", style: AppTheme.headerOnCoffee),
+                    const Text(
+                      "Collection",
+                      style: TextStyle(
+                        fontFamily: 'RecoletaAlt',
+                        fontSize: 30,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
                     if (_getSubtitle() != null)
                       Text(
                         _getSubtitle()!,
-                        style: AppTheme.subtitleOnCoffee,
+                        style: const TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFFE8E0D5),
+                        ),
                       ),
                   ],
                 ),
@@ -304,78 +319,78 @@ class _CollectionScreenState extends State<CollectionScreen>
             ),
           ),
 
-            // ═══════════════════════════════════════════════════════════════════
-            // BARRE DE RECHERCHE MODERNE
-            // ═══════════════════════════════════════════════════════════════════
-            Padding(
+          // ═══════════════════════════════════════════════════════════════════
+          // BARRE DE RECHERCHE MODERNE
+          // ═══════════════════════════════════════════════════════════════════
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _ModernSearchBar(
+              controller: _searchController,
+              hint: _getSearchHint(),
+              onChanged: (value) => setState(() => _searchQuery = value),
+              onTypePressed: _showSearchTypeOptions,
+              searchType: _searchType,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ═══════════════════════════════════════════════════════════════════
+          // FILTRES CHIPS MODERNES
+          // ═══════════════════════════════════════════════════════════════════
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _ModernSearchBar(
-                controller: _searchController,
-                hint: _getSearchHint(),
-                onChanged: (value) => setState(() => _searchQuery = value),
-                onTypePressed: _showSearchTypeOptions,
-                searchType: _searchType,
-              ),
+              children: [
+                _FilterChip(
+                  label: "Tout",
+                  icon: Icons.grid_view_rounded,
+                  isActive: _activeFilter == "all",
+                  count: _toSee.length + _seen.length,
+                  onTap: () => setState(() => _activeFilter = "all"),
+                ),
+                const SizedBox(width: 10),
+                _FilterChip(
+                  label: "À voir",
+                  icon: Icons.bookmark_rounded,
+                  isActive: _activeFilter == "toSee",
+                  count: _toSee.length,
+                  onTap: () => setState(() => _activeFilter = "toSee"),
+                ),
+                const SizedBox(width: 10),
+                _FilterChip(
+                  label: "À noter",
+                  icon: Icons.rate_review_rounded,
+                  isActive: _activeFilter == "seenNotRated",
+                  count: _seenNotRated.length,
+                  onTap: () => setState(() => _activeFilter = "seenNotRated"),
+                ),
+                const SizedBox(width: 10),
+                _FilterChip(
+                  label: "Notés",
+                  icon: Icons.star_rounded,
+                  isActive: _activeFilter == "rated",
+                  count: _seen.where((m) => m.isRated).length,
+                  onTap: () => setState(() => _activeFilter = "rated"),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+          ),
+          const SizedBox(height: 16),
 
-            // ═══════════════════════════════════════════════════════════════════
-            // FILTRES CHIPS MODERNES
-            // ═══════════════════════════════════════════════════════════════════
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                children: [
-                  _FilterChip(
-                    label: "Tout",
-                    icon: Icons.grid_view_rounded,
-                    isActive: _activeFilter == "all",
-                    count: _toSee.length + _seen.length,
-                    onTap: () => setState(() => _activeFilter = "all"),
-                  ),
-                  const SizedBox(width: 10),
-                  _FilterChip(
-                    label: "À voir",
-                    icon: Icons.bookmark_rounded,
-                    isActive: _activeFilter == "toSee",
-                    count: _toSee.length,
-                    onTap: () => setState(() => _activeFilter = "toSee"),
-                  ),
-                  const SizedBox(width: 10),
-                  _FilterChip(
-                    label: "À noter",
-                    icon: Icons.rate_review_rounded,
-                    isActive: _activeFilter == "seenNotRated",
-                    count: _seenNotRated.length,
-                    onTap: () => setState(() => _activeFilter = "seenNotRated"),
-                  ),
-                  const SizedBox(width: 10),
-                  _FilterChip(
-                    label: "Notés",
-                    icon: Icons.star_rounded,
-                    isActive: _activeFilter == "rated",
-                    count: _seen.where((m) => m.isRated).length,
-                    onTap: () => setState(() => _activeFilter = "rated"),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ═══════════════════════════════════════════════════════════════════
-            // GRILLE DE FILMS
-            // ═══════════════════════════════════════════════════════════════════
-            Expanded(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _errorMessage != null
-                      ? _buildErrorState()
-                      : _buildMovieGrid(),
-            ),
-          ],
-        ),
+          // ═══════════════════════════════════════════════════════════════════
+          // GRILLE DE FILMS
+          // ═══════════════════════════════════════════════════════════════════
+          Expanded(
+            child: _isLoading
+                ? _buildLoadingState()
+                : _errorMessage != null
+                ? _buildErrorState()
+                : _buildMovieGrid(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -455,9 +470,7 @@ class _CollectionScreenState extends State<CollectionScreen>
           const SizedBox(height: 20),
           Text(
             "Chargement...",
-            style: AppTheme.bodyMedium.copyWith(
-              color: AppTheme.textSecondary,
-            ),
+            style: AppTheme.bodyMedium.copyWith(color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -584,11 +597,7 @@ class _CollectionScreenState extends State<CollectionScreen>
                 color: AppTheme.accentSoft,
                 borderRadius: BorderRadius.circular(30),
               ),
-              child: Icon(
-                icon,
-                size: 48,
-                color: AppTheme.accent,
-              ),
+              child: Icon(icon, size: 48, color: AppTheme.accent),
             ),
             const SizedBox(height: 24),
             Text(title, style: AppTheme.titleLarge),
@@ -668,11 +677,7 @@ class _ModernSearchBar extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        _typeIcon,
-                        color: AppTheme.accent,
-                        size: 20,
-                      ),
+                      Icon(_typeIcon, color: AppTheme.accent, size: 20),
                       const SizedBox(width: 4),
                       Icon(
                         Icons.keyboard_arrow_down_rounded,
@@ -788,9 +793,7 @@ class _FilterChipState extends State<_FilterChip> {
               Icon(
                 widget.icon,
                 size: 16,
-                color: widget.isActive
-                    ? Colors.white
-                    : AppTheme.textSecondary,
+                color: widget.isActive ? Colors.white : AppTheme.textSecondary,
               ),
               const SizedBox(width: 6),
               Text(
@@ -798,9 +801,7 @@ class _FilterChipState extends State<_FilterChip> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: widget.isActive
-                      ? Colors.white
-                      : AppTheme.textPrimary,
+                  color: widget.isActive ? Colors.white : AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(width: 6),
@@ -818,9 +819,7 @@ class _FilterChipState extends State<_FilterChip> {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'RecoletaAlt',
-                    color: widget.isActive
-                        ? Colors.white
-                        : AppTheme.accent,
+                    color: widget.isActive ? Colors.white : AppTheme.accent,
                   ),
                 ),
               ),
@@ -913,16 +912,7 @@ class _ModernMovieCardState extends State<_ModernMovieCard> {
                   right: 0,
                   height: 100,
                   child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          const Color(0xFF2D1F14).withValues(alpha: 0.9),
-                        ],
-                      ),
-                    ),
+                    decoration: BoxDecoration(color: const Color(0xB32D1F14)),
                   ),
                 ),
 
@@ -966,7 +956,9 @@ class _ModernMovieCardState extends State<_ModernMovieCard> {
                           ],
                         ),
                         child: Icon(
-                          widget.movie.isRated ? Icons.edit_rounded : Icons.star_rounded,
+                          widget.movie.isRated
+                              ? Icons.edit_rounded
+                              : Icons.star_rounded,
                           color: Colors.white,
                           size: 16,
                         ),
@@ -989,9 +981,7 @@ class _ModernMovieCardState extends State<_ModernMovieCard> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [AppTheme.accent, AppTheme.accentDark],
-                            ),
+                            color: const Color(0xFF4A3529),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
@@ -1064,11 +1054,15 @@ class _ActionButtonState extends State<_ActionButton> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.accent, AppTheme.accentDark],
-            ),
+            color: const Color(0xFF4A3529),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: AppTheme.shadowAccent(AppTheme.accent),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4A3529).withValues(alpha: 0.28),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1124,17 +1118,17 @@ class _SortButtonState extends State<_SortButton> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.accent, AppTheme.accentDark],
-            ),
+            color: const Color(0xFF4A3529),
             borderRadius: BorderRadius.circular(14),
-            boxShadow: AppTheme.shadowAccent(AppTheme.accent),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4A3529).withValues(alpha: 0.28),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: const Icon(
-            Icons.sort_rounded,
-            color: Colors.white,
-            size: 22,
-          ),
+          child: const Icon(Icons.sort_rounded, color: Colors.white, size: 22),
         ),
       ),
     );
@@ -1149,10 +1143,7 @@ class _SortModal extends StatelessWidget {
   final String currentSort;
   final Function(String) onSortChanged;
 
-  const _SortModal({
-    required this.currentSort,
-    required this.onSortChanged,
-  });
+  const _SortModal({required this.currentSort, required this.onSortChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -1163,7 +1154,9 @@ class _SortModal extends StatelessWidget {
       constraints: BoxConstraints(maxHeight: maxModalHeight),
       child: Container(
         padding: EdgeInsets.fromLTRB(
-          24, 24, 24,
+          24,
+          24,
+          24,
           MediaQuery.of(context).padding.bottom + 24,
         ),
         decoration: const BoxDecoration(
@@ -1287,9 +1280,7 @@ class _SortOption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           border: Border(
-            bottom: BorderSide(
-              color: AppTheme.border.withValues(alpha: 0.5),
-            ),
+            bottom: BorderSide(color: AppTheme.border.withValues(alpha: 0.5)),
           ),
         ),
         child: Row(
@@ -1350,7 +1341,9 @@ class _SearchTypeModal extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        24, 24, 24,
+        24,
+        24,
+        24,
         MediaQuery.of(context).padding.bottom + 24,
       ),
       decoration: const BoxDecoration(

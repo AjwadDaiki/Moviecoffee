@@ -41,8 +41,16 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   int? _selectedYear;
 
   final List<String> _genres = [
-    "Tous", "Action", "Comédie", "Drame", "Science-Fiction",
-    "Horreur", "Romance", "Thriller", "Documentaire", "Animation",
+    "Tous",
+    "Action",
+    "Comédie",
+    "Drame",
+    "Science-Fiction",
+    "Horreur",
+    "Romance",
+    "Thriller",
+    "Documentaire",
+    "Animation",
   ];
 
   final List<int> _years = [2024, 2023, 2022, 2021, 2020, 2019, 2018];
@@ -100,7 +108,11 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
 
     try {
       // Utiliser v3 API qui retourne automatiquement les nouveaux matchs
-      final result = await _api.sendActionV3(movie.tmdbId, action, rating: rating);
+      final result = await _api.sendActionV3(
+        movie.tmdbId,
+        action,
+        rating: rating,
+      );
 
       // Si nouveaux matchs, afficher badge discret
       if (result != null &&
@@ -183,7 +195,12 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           return Container(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).padding.bottom + 24),
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              MediaQuery.of(ctx).padding.bottom + 24,
+            ),
             decoration: const BoxDecoration(
               color: AppTheme.background,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -211,7 +228,9 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _currentIndex < _movies.length ? _movies[_currentIndex].title.fr : '',
+                  _currentIndex < _movies.length
+                      ? _movies[_currentIndex].title.fr
+                      : '',
                   style: AppTheme.bodyMedium,
                   textAlign: TextAlign.center,
                   maxLines: 1,
@@ -239,8 +258,8 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                           isHalf
                               ? Icons.star_half_rounded
                               : isFull
-                                  ? Icons.star_rounded
-                                  : Icons.star_outline_rounded,
+                              ? Icons.star_rounded
+                              : Icons.star_outline_rounded,
                           color: isFull || isHalf
                               ? const Color(0xFFFFC107)
                               : AppTheme.border,
@@ -383,7 +402,12 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 Expanded(
                   child: Text(
                     "Découvrir",
-                    style: AppTheme.headerOnCoffee,
+                    style: const TextStyle(
+                      fontFamily: 'RecoletaAlt',
+                      fontSize: 30,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
                 _FilterButton(onTap: _showFilterModal),
@@ -394,9 +418,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
           // ═══════════════════════════════════════════════════════════════════
           // CONTENU PRINCIPAL
           // ═══════════════════════════════════════════════════════════════════
-          Expanded(
-            child: _buildContent(bottomNavHeight + bottomPadding),
-          ),
+          Expanded(child: _buildContent(bottomNavHeight + bottomPadding)),
         ],
       ),
     );
@@ -636,7 +658,6 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
 }
 
 /// =============================================================================
@@ -677,11 +698,7 @@ class _FilterButtonState extends State<_FilterButton> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: AppTheme.shadowAccent(AppTheme.accent),
           ),
-          child: const Icon(
-            Icons.tune_rounded,
-            color: Colors.white,
-            size: 22,
-          ),
+          child: const Icon(Icons.tune_rounded, color: Colors.white, size: 22),
         ),
       ),
     );
@@ -725,7 +742,11 @@ class _ModernMovieCard extends StatelessWidget {
               errorWidget: (context, url, error) => Container(
                 color: AppTheme.surfaceDark,
                 child: const Center(
-                  child: Icon(Icons.movie_rounded, size: 64, color: AppTheme.accent),
+                  child: Icon(
+                    Icons.movie_rounded,
+                    size: 64,
+                    color: AppTheme.accent,
+                  ),
                 ),
               ),
             ),
@@ -822,17 +843,25 @@ class _ModernMovieCard extends StatelessWidget {
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.info_outline_rounded,
-                            color: Colors.white.withValues(alpha: 0.9), size: 14),
+                        Icon(
+                          Icons.info_outline_rounded,
+                          color: Colors.white.withValues(alpha: 0.9),
+                          size: 14,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           "Détails",
@@ -1002,7 +1031,11 @@ class _SeenButtonState extends State<_SeenButton> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.visibility_rounded, size: 18, color: AppTheme.textSecondary),
+                  Icon(
+                    Icons.visibility_rounded,
+                    size: 18,
+                    color: AppTheme.textSecondary,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     "Déjà vu",
@@ -1031,7 +1064,11 @@ class _ModernButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _ModernButton({required this.label, required this.icon, required this.onTap});
+  const _ModernButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
 
   @override
   State<_ModernButton> createState() => _ModernButtonState();
@@ -1055,7 +1092,9 @@ class _ModernButtonState extends State<_ModernButton> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [AppTheme.accent, AppTheme.accentDark]),
+            gradient: const LinearGradient(
+              colors: [AppTheme.accent, AppTheme.accentDark],
+            ),
             borderRadius: BorderRadius.circular(16),
             boxShadow: AppTheme.shadowAccent(AppTheme.accent),
           ),
@@ -1148,7 +1187,9 @@ class _FilterModalState extends State<_FilterModal> {
                     }),
                     child: Text(
                       "Réinitialiser",
-                      style: AppTheme.labelLarge.copyWith(color: AppTheme.accent),
+                      style: AppTheme.labelLarge.copyWith(
+                        color: AppTheme.accent,
+                      ),
                     ),
                   ),
               ],
@@ -1201,7 +1242,12 @@ class _FilterModalState extends State<_FilterModal> {
             ),
           ),
           Padding(
-            padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).padding.bottom + 16),
+            padding: EdgeInsets.fromLTRB(
+              24,
+              16,
+              24,
+              MediaQuery.of(context).padding.bottom + 16,
+            ),
             child: SizedBox(
               width: double.infinity,
               child: _ModernButton(
@@ -1239,13 +1285,19 @@ class _PillChip extends StatelessWidget {
         duration: AppTheme.durationMedium,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppTheme.accent : AppTheme.surface.withValues(alpha: 0.9),
+          color: isSelected
+              ? AppTheme.accent
+              : AppTheme.surface.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(50),
           border: Border.all(
-            color: isSelected ? AppTheme.accent.withValues(alpha: 0.3) : AppTheme.border,
+            color: isSelected
+                ? AppTheme.accent.withValues(alpha: 0.3)
+                : AppTheme.border,
             width: 1,
           ),
-          boxShadow: isSelected ? AppTheme.shadowAccent(AppTheme.accent) : AppTheme.shadowSmall,
+          boxShadow: isSelected
+              ? AppTheme.shadowAccent(AppTheme.accent)
+              : AppTheme.shadowSmall,
         ),
         child: Text(
           label,
@@ -1317,7 +1369,10 @@ class _MovieDetailSheet extends StatelessWidget {
                       runSpacing: 8,
                       children: movie.genres.map((genre) {
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: AppTheme.accentSoft,
                             borderRadius: BorderRadius.circular(12),
@@ -1370,7 +1425,11 @@ class _DetailBadge extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(color: bgColor, fontWeight: FontWeight.w600, fontSize: 15),
+            style: TextStyle(
+              color: bgColor,
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
           ),
         ],
       ),

@@ -391,6 +391,7 @@ class _StatsScreenState extends State<StatsScreen>
                   child: _StoryButton(
                     label: 'Semaine',
                     icon: Icons.calendar_today,
+                    buttonColor: const Color(0xFF2D8FD5),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -407,6 +408,7 @@ class _StatsScreenState extends State<StatsScreen>
                   child: _StoryButton(
                     label: 'All Time',
                     icon: Icons.insights_rounded,
+                    buttonColor: const Color(0xFFE07A5F),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -758,12 +760,7 @@ class _StatsScreenState extends State<StatsScreen>
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? const LinearGradient(
-                  colors: [CoffeeColors.caramelBronze, CoffeeColors.terracotta],
-                )
-              : null,
-          color: isSelected ? null : AppTheme.surface,
+          color: isSelected ? const Color(0xFF4A3529) : AppTheme.surface,
           borderRadius: BorderRadius.circular(14),
           border: isSelected ? null : Border.all(color: AppTheme.border),
         ),
@@ -901,11 +898,15 @@ class _RefreshButton extends StatelessWidget {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [CoffeeColors.terracotta, CoffeeColors.caramelBronze],
-          ),
+          color: const Color(0xFF4A3529),
           borderRadius: BorderRadius.circular(14),
-          boxShadow: AppTheme.shadowAccent(CoffeeColors.caramelBronze),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF4A3529).withValues(alpha: 0.28),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: RotationTransition(
           turns: animation,
@@ -947,16 +948,15 @@ class _WeeklyHighlightCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                CoffeeColors.terracotta.withValues(alpha: 0.95),
-                CoffeeColors.caramelBronze.withValues(alpha: 0.95),
-              ],
-            ),
+            color: const Color(0xFF4A3529),
             borderRadius: BorderRadius.circular(24),
-            boxShadow: AppTheme.shadowAccent(CoffeeColors.caramelBronze),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4A3529).withValues(alpha: 0.3),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1206,11 +1206,15 @@ class _ActionButtonState extends State<_ActionButton> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [CoffeeColors.terracotta, CoffeeColors.caramelBronze],
-            ),
+            color: const Color(0xFF4A3529),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: AppTheme.shadowAccent(CoffeeColors.caramelBronze),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4A3529).withValues(alpha: 0.28),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1240,11 +1244,13 @@ class _ActionButtonState extends State<_ActionButton> {
 class _StoryButton extends StatelessWidget {
   final String label;
   final IconData icon;
+  final Color buttonColor;
   final VoidCallback onTap;
 
   const _StoryButton({
     required this.label,
     required this.icon,
+    required this.buttonColor,
     required this.onTap,
   });
 
@@ -1255,13 +1261,11 @@ class _StoryButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [CoffeeColors.terracotta, CoffeeColors.caramelBronze],
-          ),
+          color: buttonColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: CoffeeColors.caramelBronze.withValues(alpha: 0.35),
+              color: buttonColor.withValues(alpha: 0.3),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
