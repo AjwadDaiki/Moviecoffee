@@ -1,0 +1,56 @@
+name: mobile
+description: A new Flutter project.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.7 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Icônes
+  cupertino_icons: ^1.0.8
+  
+  # Réseau & API
+  dio: ^5.4.0
+  
+  # Design & UI
+  google_fonts: ^6.1.0
+  flutter_card_swiper: ^7.0.0
+  cached_network_image: ^3.4.1
+  flutter_svg: ^2.0.10+1
+
+  # Partage & Fichiers
+  share_plus: ^10.1.2
+  path_provider: ^2.1.5
+  url_launcher: ^6.2.5
+  image_picker: ^1.0.7
+
+  # Gestion des états & Stockage (POUR LA CONNEXION)
+  provider: ^6.1.1
+  flutter_secure_storage: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+    - assets/fonts/
+
+  fonts:
+    - family: HolyCream
+      fonts:
+        - asset: assets/fonts/HolyCream-Regular.ttf
+        - asset: assets/fonts/HolyCream-Italic.ttf
+          style: italic
+    - family: RecoletaAlt
+      fonts:
+        - asset: assets/fonts/Recoleta Alt Black.otf
+          weight: 900

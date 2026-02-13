@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pip freeze:*)",
+      "Bash(wc:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(dart analyze:*)",
+      "Bash(find \"c:\\\\Users\\\\daiki\\\\Desktop\\\\MoovieCoffee\\\\mobile\\\\lib\\\\screens\"\" -type f -name \"*.dart \")",
+      "Bash(pushd:*)",
+      "Bash(powershell -Command:*)"
+    ]
+  }
+}
