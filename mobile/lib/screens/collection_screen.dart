@@ -912,7 +912,17 @@ class _ModernMovieCardState extends State<_ModernMovieCard> {
                   right: 0,
                   height: 100,
                   child: Container(
-                    decoration: BoxDecoration(color: const Color(0xB32D1F14)),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0x001F140F),
+                          Color(0x731F140F),
+                          Color(0xD92D1F14),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
 

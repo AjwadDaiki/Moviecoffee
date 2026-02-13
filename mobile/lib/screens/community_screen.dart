@@ -200,7 +200,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                 ),
               ),
               Text(
-                '${_friends.length} amis Ãƒâ€šÃ‚Â· ${_matches.length} matchs',
+                '${_friends.length} amis / ${_matches.length} matchs',
                 style: const TextStyle(
                   fontFamily: 'RecoletaAlt',
                   fontSize: 13,
@@ -395,8 +395,8 @@ class _CommunityScreenState extends State<CommunityScreen>
     if (_feedActivities.isEmpty) {
       return _buildEmptyState(
         icon: Icons.dynamic_feed_outlined,
-        title: 'Aucune activitÃƒÆ’Ã‚Â©',
-        subtitle: 'Suivez des amis pour voir leur activitÃƒÆ’Ã‚Â©!',
+        title: 'Aucune activite',
+        subtitle: 'Suivez des amis pour voir leur activite!',
         action: TextButton.icon(
           onPressed: _openSearch,
           icon: Icon(Icons.person_add, color: AppTheme.accent),
@@ -454,7 +454,14 @@ class _CommunityScreenState extends State<CommunityScreen>
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.95),
+            const Color(0xFFF5EEE4),
+          ],
+        ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
@@ -536,7 +543,14 @@ class _CommunityScreenState extends State<CommunityScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.95),
+            const Color(0xFFF7F1E8),
+          ],
+        ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: CoffeeColors.creamBorder),
       ),
@@ -704,7 +718,14 @@ class _CommunityScreenState extends State<CommunityScreen>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.96),
+            const Color(0xFFF3ECE3),
+          ],
+        ),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
@@ -730,7 +751,11 @@ class _CommunityScreenState extends State<CommunityScreen>
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A3529),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF5A4335), Color(0xFF3D2C21)],
+                      ),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -807,107 +832,128 @@ class _CommunityScreenState extends State<CommunityScreen>
           ),
 
           // Poster du film
-          GestureDetector(
-            onTap: movieId > 0
-                ? () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => MovieDetailScreen(
-                          tmdbId: movieId,
-                          posterUrl: posterUrl,
-                          title: movieTitle,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: GestureDetector(
+              onTap: movieId > 0
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MovieDetailScreen(
+                            tmdbId: movieId,
+                            posterUrl: posterUrl,
+                            title: movieTitle,
+                          ),
                         ),
-                      ),
-                    );
-                  }
-                : null,
-            child: posterUrl != null
-                ? Stack(
-                    children: [
-                      AspectRatio(
-                        aspectRatio: 1.8,
-                        child: Image.network(
-                          posterUrl,
-                          fit: BoxFit.cover,
-                          alignment: Alignment.topCenter,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: CoffeeColors.steamMilk,
-                            child: const Center(
-                              child: Icon(
-                                Icons.movie_rounded,
-                                size: 48,
-                                color: CoffeeColors.moka,
+                      );
+                    }
+                  : null,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: posterUrl != null
+                    ? Stack(
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 1.8,
+                            child: Image.network(
+                              posterUrl,
+                              fit: BoxFit.cover,
+                              alignment: Alignment.topCenter,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: CoffeeColors.steamMilk,
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.movie_rounded,
+                                    size: 48,
+                                    color: CoffeeColors.moka,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      // Gradient bottom for title
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          height: 88,
-                          decoration: BoxDecoration(
-                            color: CoffeeColors.darkRoast.withValues(
-                              alpha: 0.78,
+                          // Gradient bottom for title
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              height: 88,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x001F140F),
+                                    Color(0x801F140F),
+                                    Color(0xE62D1F14),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
+                          // Movie title
+                          Positioned(
+                            left: 14,
+                            right: 14,
+                            bottom: 12,
+                            child: Text(
+                              movieTitle,
+                              style: GoogleFonts.dmSans(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                                color: Colors.white,
+                                shadows: [
+                                  const Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Container(
+                        height: 120,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              CoffeeColors.latteCream,
+                              CoffeeColors.milkFoam,
+                            ],
+                          ),
                         ),
-                      ),
-                      // Movie title
-                      Positioned(
-                        left: 14,
-                        right: 14,
-                        bottom: 12,
-                        child: Text(
-                          movieTitle,
-                          style: GoogleFonts.dmSans(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: Colors.white,
-                            shadows: [
-                              const Shadow(
-                                color: Colors.black54,
-                                blurRadius: 6,
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.movie_rounded,
+                                size: 36,
+                                color: CoffeeColors.moka,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                movieTitle,
+                                style: GoogleFonts.dmSans(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: CoffeeColors.espresso,
+                                ),
+                                textAlign: TextAlign.center,
                               ),
                             ],
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ],
-                  )
-                : Container(
-                    height: 120,
-                    width: double.infinity,
-                    color: CoffeeColors.latteCream,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.movie_rounded,
-                            size: 36,
-                            color: CoffeeColors.moka,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            movieTitle,
-                            style: GoogleFonts.dmSans(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                              color: CoffeeColors.espresso,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+              ),
+            ),
           ),
 
           // Actions et extrait du commentaire
@@ -964,7 +1010,14 @@ class _CommunityScreenState extends State<CommunityScreen>
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.96),
+                          const Color(0xFFF8F2EA),
+                        ],
+                      ),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: CoffeeColors.creamBorder),
                     ),
@@ -1016,9 +1069,23 @@ class _CommunityScreenState extends State<CommunityScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: highlight
-              ? CoffeeColors.caramelBronze.withValues(alpha: 0.12)
-              : CoffeeColors.latteCream,
+          gradient: highlight
+              ? LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    CoffeeColors.caramelBronze.withValues(alpha: 0.22),
+                    CoffeeColors.caramelBronze.withValues(alpha: 0.1),
+                  ],
+                )
+              : LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.92),
+                    const Color(0xFFF3EBDD),
+                  ],
+                ),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: highlight
@@ -1065,7 +1132,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     if (activityId == null) return;
     try {
       await _apiService.reactToActivity(activityId, 'like');
-      _loadData(); // Recharger pour mettre ÃƒÆ’Ã‚Â  jour
+      _loadData(); // Recharger les donnees
     } catch (e) {
       // Silencieux
     }
@@ -1856,7 +1923,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     required int candidateCount,
   }) {
     if (fullRandom) {
-      return 'Mode full alea Ã¢â‚¬Â¢ $candidateCount film${candidateCount > 1 ? 's' : ''} possible${candidateCount > 1 ? 's' : ''}';
+      return 'Mode full alea / $candidateCount film${candidateCount > 1 ? 's' : ''} possible${candidateCount > 1 ? 's' : ''}';
     }
 
     final filters = <String>[];
@@ -1867,10 +1934,8 @@ class _CommunityScreenState extends State<CommunityScreen>
       filters.add(genre);
     }
 
-    final criteria = filters.isEmpty
-        ? 'sans filtre'
-        : filters.join(' Ã¢â‚¬Â¢ ');
-    return '$criteria Ã¢â‚¬Â¢ $candidateCount film${candidateCount > 1 ? 's' : ''}';
+    final criteria = filters.isEmpty ? 'sans filtre' : filters.join(' / ');
+    return '$criteria / $candidateCount film${candidateCount > 1 ? 's' : ''}';
   }
 
   Widget _buildMatchPartnersFilter(
@@ -2050,7 +2115,14 @@ class _CommunityScreenState extends State<CommunityScreen>
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.96),
+            const Color(0xFFF2EBE1),
+          ],
+        ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
@@ -2160,7 +2232,11 @@ class _CommunityScreenState extends State<CommunityScreen>
                           width: 22,
                           height: 22,
                           decoration: BoxDecoration(
-                            color: AppTheme.accent,
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF5A4335), Color(0xFF3D2C21)],
+                            ),
                             shape: BoxShape.circle,
                           ),
                           child: Center(
@@ -2196,7 +2272,11 @@ class _CommunityScreenState extends State<CommunityScreen>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A3529),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF564133), Color(0xFF35261D)],
+                  ),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -2265,7 +2345,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'Demandes reÃƒÆ’Ã‚Â§ues',
+                      'Demandes recues',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -2405,7 +2485,7 @@ class _CommunityScreenState extends State<CommunityScreen>
               child: _buildEmptyState(
                 icon: Icons.people_outline,
                 title: 'Aucun ami',
-                subtitle: 'Ajoutez des amis pour voir leurs activitÃƒÆ’Ã‚Â©s!',
+                subtitle: 'Ajoutez des amis pour voir leurs activites!',
                 action: TextButton.icon(
                   onPressed: _openSearch,
                   icon: const Icon(Icons.search),
@@ -2459,7 +2539,14 @@ class _CommunityScreenState extends State<CommunityScreen>
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.96),
+            const Color(0xFFF6EFE4),
+          ],
+        ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.orange.shade200, width: 2),
         boxShadow: [
@@ -2477,7 +2564,11 @@ class _CommunityScreenState extends State<CommunityScreen>
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: CoffeeColors.caramelBronze,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF5A4335), Color(0xFF3D2C21)],
+              ),
               shape: BoxShape.circle,
             ),
             child: Center(
@@ -2560,7 +2651,11 @@ class _CommunityScreenState extends State<CommunityScreen>
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: CoffeeColors.latteCream,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [CoffeeColors.latteCream, const Color(0xFFEFE5D9)],
+        ),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -2599,7 +2694,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                   ),
                 ),
                 Text(
-                  'En attente de rÃƒÆ’Ã‚Â©ponse...',
+                  'En attente de reponse...',
                   style: TextStyle(
                     fontSize: 12,
                     color: CoffeeColors.moka,
@@ -2619,11 +2714,11 @@ class _CommunityScreenState extends State<CommunityScreen>
   Future<void> _acceptFriendRequest(String userId) async {
     try {
       await _apiService.acceptFriend(userId);
-      _loadData(); // Recharger les donnÃƒÆ’Ã‚Â©es
+      _loadData(); // Recharger les donnees
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Ami ajoutÃƒÆ’Ã‚Â©!'),
+            content: Text('Ami ajoute!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -2640,7 +2735,7 @@ class _CommunityScreenState extends State<CommunityScreen>
   Future<void> _declineFriendRequest(String userId) async {
     try {
       await _apiService.declineFriend(userId);
-      _loadData(); // Recharger les donnÃƒÆ’Ã‚Â©es
+      _loadData(); // Recharger les donnees
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -2663,7 +2758,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       return _buildEmptyState(
         icon: Icons.chat_bubble_outline,
         title: 'Aucune conversation',
-        subtitle: 'Envoyez un message ÃƒÆ’Ã‚Â  vos amis!',
+        subtitle: 'Envoyez un message a vos amis!',
       );
     }
 
@@ -2727,7 +2822,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                         ),
                         Text(
                           '${sortedConversations.length} conversation${sortedConversations.length > 1 ? 's' : ''}'
-                          '${totalUnread > 0 ? ' Ãƒâ€šÃ‚Â· $totalUnread non lu${totalUnread > 1 ? 's' : ''}' : ''}',
+                          '${totalUnread > 0 ? ' / $totalUnread non lu${totalUnread > 1 ? 's' : ''}' : ''}',
                           style: const TextStyle(
                             fontFamily: 'RecoletaAlt',
                             fontSize: 12,
@@ -2794,7 +2889,16 @@ class _CommunityScreenState extends State<CommunityScreen>
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: hasUnread ? AppTheme.accentSoft : AppTheme.surface,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: hasUnread
+                ? [const Color(0xFFF6F0E7), const Color(0xFFEFE2D5)]
+                : [
+                    Colors.white.withValues(alpha: 0.95),
+                    const Color(0xFFF4EDE3),
+                  ],
+          ),
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: Border.all(
             color: hasUnread
@@ -2820,7 +2924,14 @@ class _CommunityScreenState extends State<CommunityScreen>
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: avatarColors[colorIndex][0],
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    avatarColors[colorIndex][0],
+                    avatarColors[colorIndex][1],
+                  ],
+                ),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(

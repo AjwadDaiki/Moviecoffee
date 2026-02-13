@@ -39,13 +39,24 @@ class FriendCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: 0.96),
+              const Color(0xFFF4EDE3),
+            ],
+          ),
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: CoffeeColors.creamBorder.withValues(alpha: 0.9),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: CoffeeColors.espresso.withValues(alpha: 0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+              spreadRadius: -4,
             ),
           ],
         ),
@@ -57,10 +68,7 @@ class FriendCard extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    CoffeeColors.caramelBronze,
-                    CoffeeColors.terracotta,
-                  ],
+                  colors: [CoffeeColors.caramelBronze, CoffeeColors.terracotta],
                 ),
                 shape: BoxShape.circle,
               ),
@@ -105,7 +113,9 @@ class FriendCard extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: CoffeeColors.caramelBronze.withValues(alpha: 0.15),
+                            color: CoffeeColors.caramelBronze.withValues(
+                              alpha: 0.15,
+                            ),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -171,10 +181,7 @@ class FriendCard extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [
-                        Colors.green.shade400,
-                        Colors.green.shade600,
-                      ],
+                      colors: [Colors.green.shade400, Colors.green.shade600],
                     ),
                     borderRadius: BorderRadius.circular(20),
                   ),
@@ -202,29 +209,18 @@ class FriendCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 14,
-                      color: CoffeeColors.moka,
-                    ),
+                    Icon(Icons.schedule, size: 14, color: CoffeeColors.moka),
                     const SizedBox(width: 4),
                     Text(
                       'En attente',
-                      style: TextStyle(
-                        color: CoffeeColors.moka,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: CoffeeColors.moka, fontSize: 12),
                     ),
                   ],
                 ),
               )
             else if (isFriend)
               // Déjà ami
-              Icon(
-                Icons.check_circle,
-                color: Colors.green.shade400,
-                size: 24,
-              )
+              Icon(Icons.check_circle, color: Colors.green.shade400, size: 24)
             else if (isFollowing)
               // Déjà suivi
               Icon(
@@ -248,11 +244,7 @@ class FriendCard extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: const [
-                      Icon(
-                        Icons.person_add,
-                        color: Colors.white,
-                        size: 16,
-                      ),
+                      Icon(Icons.person_add, color: Colors.white, size: 16),
                       SizedBox(width: 4),
                       Text(
                         'Ajouter',
