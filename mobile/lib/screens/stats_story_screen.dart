@@ -34,6 +34,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
     2,
     (_) => GlobalKey(),
   );
+  final GlobalKey _duoTwitterKey = GlobalKey();
   final List<GlobalKey> _storyPageKeys = List.generate(3, (_) => GlobalKey());
   final List<GlobalKey> _twitterPageKeys = List.generate(2, (_) => GlobalKey());
   AdvancedStats? _statsData;
@@ -58,8 +59,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
   static const _storyHeight = 640.0; // 9:16
   static const _twitterWidth = 640.0; // 16:9
   static const _twitterHeight = 360.0; // 16:9
-  bool get _isTwitterFormat =>
-      widget.period != 'duo' && _templateFormat == _ShareTemplateFormat.twitter;
+  bool get _isTwitterFormat => _templateFormat == _ShareTemplateFormat.twitter;
   double get _activeStoryWidth =>
       _isTwitterFormat ? _twitterWidth : _storyWidth;
   double get _activeStoryHeight =>
@@ -125,7 +125,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
         _twitterPageKeys.length - 1,
       );
       final targetKey = widget.period == 'duo'
-          ? _duoStoryPageKeys[safeDuoPage]
+          ? (_isTwitterFormat ? _duoTwitterKey : _duoStoryPageKeys[safeDuoPage])
           : _isTwitterFormat
           ? _twitterPageKeys[safeTwitterPage]
           : _storyPageKeys[safeStoryPage];
@@ -153,7 +153,9 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
       final fileName =
           'moovie_story_${storyType}_${formatType}_${DateTime.now().millisecondsSinceEpoch}.png';
       final shareText = widget.period == 'duo'
-          ? 'Notre compatibilite cine sur MoovieCoffee'
+          ? (_isTwitterFormat
+                ? 'Notre compatibilite cine en format 16:9 sur MoovieCoffee'
+                : 'Notre compatibilite cine sur MoovieCoffee')
           : _isTwitterFormat
           ? 'Mes stats cine en format 16:9 sur MoovieCoffee'
           : 'Mes stats cine sur MoovieCoffee';
@@ -232,17 +234,17 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
       );
     }
 
-    if (widget.period == 'duo') {
-      return _buildDuoMultiPage();
-    }
-
     return Column(
       children: [
         _buildFormatSwitcher(),
         Expanded(
-          child: _isTwitterFormat
-              ? _buildTwitterMultiPage()
-              : _buildMultiPageStory(),
+          child: widget.period == 'duo'
+              ? (_isTwitterFormat
+                    ? _buildDuoTwitterSinglePage()
+                    : _buildDuoMultiPage())
+              : (_isTwitterFormat
+                    ? _buildTwitterMultiPage()
+                    : _buildMultiPageStory()),
         ),
       ],
     );
@@ -268,6 +270,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
                   setState(() {
                     _templateFormat = _ShareTemplateFormat.story;
                     _currentStoryPage = 0;
+                    _currentDuoStoryPage = 0;
                   });
                 },
               ),
@@ -425,6 +428,15 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
     );
   }
 
+  Widget _buildDuoTwitterSinglePage() {
+    return Center(
+      child: RepaintBoundary(
+        key: _duoTwitterKey,
+        child: _buildDuoTwitterPage(),
+      ),
+    );
+  }
+
   Widget _buildTwitterMultiPage() {
     return Column(
       children: [
@@ -475,7 +487,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
   Widget _buildTwitterPage1() {
     final stats = _statsData ?? const AdvancedStats();
     final favoriteMovie = stats.lastFavoriteMovie ?? stats.favoriteMovie;
-    final topGenres = stats.genreDistribution.take(3).toList();
+    final topGenres = stats.genreDistribution.take(2).toList();
     final topGenrePcts = _buildStablePercentages(topGenres);
     final isWeek = widget.period == 'week';
     final watchedCount = isWeek ? stats.weeklyFilms : stats.totalSeen;
@@ -587,7 +599,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
   Widget _buildTwitterPage2() {
     final stats = _statsData ?? const AdvancedStats();
     final isWeek = widget.period == 'week';
-    final topGenres = stats.genreDistribution.take(3).toList();
+    final topGenres = stats.genreDistribution.take(2).toList();
     final topGenrePcts = _buildStablePercentages(topGenres);
     final periodMinutes = isWeek ? stats.weeklyMinutes : stats.totalMinutes;
     final totalHours = periodMinutes ~/ 60;
@@ -657,6 +669,276 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
           icon: Icons.auto_awesome_rounded,
         ),
       ],
+    );
+  }
+
+  Widget _buildDuoTwitterPage() {
+    final partner = widget.partnerName ?? 'Ami';
+    final shortPartner = partner.length > 14
+        ? '${partner.substring(0, 14)}...'
+        : partner;
+    final compatibilityValue = ((_duoData?['compatibility'] as num?) ?? 0)
+        .toDouble()
+        .clamp(0.0, 100.0);
+    final compatibility = compatibilityValue.round().clamp(0, 100);
+    final commonMovies =
+        ((_duoData?['duo_common_seen_count'] as num?)?.toInt() ?? 0).clamp(
+          0,
+          99999,
+        );
+    final totalMatches = ((_duoData?['total_matches'] as num?)?.toInt() ?? 0)
+        .clamp(0, 99999);
+    final duoTotalMinutes =
+        ((_duoData?['duo_total_minutes'] as num?)?.toInt() ?? 0).clamp(
+          0,
+          9999999,
+        );
+    final totalHours = duoTotalMinutes ~/ 60;
+    final totalMins = duoTotalMinutes % 60;
+    final duoTime = totalHours > 0
+        ? '${totalHours}h${totalMins.toString().padLeft(2, '0')}'
+        : '${totalMins}min';
+    final rawBreakdown = _duoData?['score_breakdown'];
+    final breakdown = rawBreakdown is Map
+        ? rawBreakdown.map((key, value) => MapEntry(key.toString(), value))
+        : <String, dynamic>{};
+    final ratingAlignment =
+        ((breakdown['rating_alignment'] as num?)?.toDouble() ??
+                compatibilityValue)
+            .clamp(0.0, 100.0);
+    final genreAlignment =
+        ((breakdown['genre_alignment'] as num?)?.toDouble() ??
+                compatibilityValue)
+            .clamp(0.0, 100.0);
+    final headline = _compatibilityHeadline(compatibilityValue);
+
+    return _buildStoryContainer(
+      toneColor: const Color(0xFF6C85A2),
+      children: [
+        _buildStoryHeader(compact: true),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildTwitterHeaderChip(
+              icon: Icons.groups_rounded,
+              label: 'Duo',
+              strong: true,
+            ),
+            const SizedBox(width: 8),
+            _buildTwitterHeaderChip(
+              icon: Icons.favorite_rounded,
+              label: 'Moi + $shortPartner',
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 11,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A3529),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF4A3529).withValues(alpha: 0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Compatibilite cine',
+                        style: GoogleFonts.dmSans(
+                          color: Colors.white.withValues(alpha: 0.88),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$compatibility%',
+                        style: const TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          color: Colors.white,
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          height: 0.95,
+                        ),
+                      ),
+                      Text(
+                        headline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          color: Colors.white.withValues(alpha: 0.86),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDuoCompactStat(
+                              value: '$commonMovies',
+                              label: 'Vus a 2',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildDuoCompactStat(
+                              value: '$totalMatches',
+                              label: 'Matchs',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 9,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _cardWhite,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _brownAccent.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Resume duo',
+                        style: TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          color: _brownDark,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDuoCompactRow(
+                        icon: Icons.schedule_rounded,
+                        label: 'Temps duo',
+                        value: duoTime,
+                      ),
+                      const SizedBox(height: 6),
+                      _buildDuoCompactRow(
+                        icon: Icons.star_rate_rounded,
+                        label: 'Alignement notes',
+                        value: '${ratingAlignment.round()}%',
+                      ),
+                      const SizedBox(height: 6),
+                      _buildDuoCompactRow(
+                        icon: Icons.theater_comedy_rounded,
+                        label: 'Alignement genres',
+                        value: '${genreAlignment.round()}%',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDuoCompactStat({required String value, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: 'RecoletaAlt',
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.dmSans(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDuoCompactRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: _brownAccent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: _brownMedium),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.dmSans(
+                color: _brownDark,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontFamily: 'RecoletaAlt',
+              color: _brownDark,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1487,8 +1769,8 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
         ? '${duoTotalHours}h'
         : '${duoTotalMinutes}min';
     final compatibilityLabel = _compatibilityHeadline(compatibilityValue);
-    const ringSize = 154.0;
-    const innerRingSize = 108.0;
+    const ringSize = 132.0;
+    const innerRingSize = 90.0;
 
     return _buildStoryContainer(
       toneColor: const Color(0xFF6F89A8),
@@ -1512,6 +1794,8 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
               Expanded(
                 child: Text(
                   duoName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: 'RecoletaAlt',
                     color: _brownDark,
@@ -1542,7 +1826,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
           child: Row(
             children: [
               Expanded(
-                flex: 5,
+                flex: 6,
                 child: Column(
                   children: [
                     SizedBox(
@@ -1617,7 +1901,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                flex: 5,
+                flex: 4,
                 child: Column(
                   children: [
                     _buildDuoMetricTile(
@@ -1772,6 +2056,9 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
 
   Widget _buildDuoStoryPage2() {
     final partner = widget.partnerName ?? 'Ami';
+    final shortPartner = partner.length > 12
+        ? '${partner.substring(0, 12)}...'
+        : partner;
     final userSeen = ((_duoData?['user_seen_count'] as num?)?.toInt() ?? 0)
         .clamp(0, 99999);
     final partnerSeen =
@@ -1893,7 +2180,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
               child: _buildStatCard(
                 icon: Icons.person_outline_rounded,
                 value: '$partnerSeen',
-                label: partner,
+                label: shortPartner,
               ),
             ),
             const SizedBox(width: 8),
@@ -2552,8 +2839,6 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
     Color? toneColor,
   }) {
     final tone = toneColor ?? _caramel;
-    final width = _activeStoryWidth;
-    final height = _activeStoryHeight;
     const radius = 24.0;
     const sidePadding = 20.0;
     const topPadding = 16.0;
@@ -2561,106 +2846,135 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
     const waveHeight = 126.0;
     const topCircleSize = 120.0;
     const bottomCircleSize = 100.0;
-    return Container(
-      width: width,
-      height: height,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: _bgCream,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: tone.withValues(alpha: 0.18)),
-      ),
-      child: Stack(
-        children: [
-          // Subtle decorative circles
-          Positioned(
-            top: -30,
-            right: -30,
-            child: Container(
-              width: topCircleSize,
-              height: topCircleSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: tone.withValues(alpha: 0.1),
-              ),
-            ),
+    final aspectRatio = _activeStoryWidth / _activeStoryHeight;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : _activeStoryWidth;
+        final maxHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : _activeStoryHeight;
+
+        var width = _activeStoryWidth;
+        var height = _activeStoryHeight;
+
+        if (width > maxWidth) {
+          width = maxWidth;
+          height = width / aspectRatio;
+        }
+        if (height > maxHeight) {
+          height = maxHeight;
+          width = height * aspectRatio;
+        }
+
+        final contentWidth = width - (sidePadding * 2);
+        final effectiveWaveHeight = _isTwitterFormat ? 86.0 : waveHeight;
+
+        return Container(
+          width: width,
+          height: height,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: _bgCream,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: tone.withValues(alpha: 0.18)),
           ),
-          Positioned(
-            bottom: 32,
-            left: -40,
-            child: Container(
-              width: bottomCircleSize,
-              height: bottomCircleSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: tone.withValues(alpha: 0.08),
-              ),
-            ),
-          ),
-          // Decorative wave at bottom (wider and lower)
-          Positioned(
-            bottom: -14,
-            left: 0,
-            right: 0,
-            child: ClipRRect(
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(radius),
-                bottomRight: Radius.circular(radius),
-              ),
-              child: CustomPaint(
-                size: Size(width, waveHeight),
-                painter: _ModernWavePainter(
-                  color: tone.withValues(alpha: 0.12),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              sidePadding,
-              topPadding,
-              sidePadding,
-              bottomPadding,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final contentWidth = width - (sidePadding * 2);
-                      if (_isTwitterFormat) {
-                        return SizedBox(
-                          width: contentWidth,
-                          height: constraints.maxHeight,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: children,
-                          ),
-                        );
-                      }
-                      final content = SizedBox(
-                        width: contentWidth,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: children,
-                        ),
-                      );
-                      return FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: content,
-                      );
-                    },
+          child: Stack(
+            children: [
+              // Subtle decorative circles
+              Positioned(
+                top: -30,
+                right: -30,
+                child: Container(
+                  width: topCircleSize,
+                  height: topCircleSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: tone.withValues(alpha: 0.1),
                   ),
                 ),
-                const SizedBox(height: 8),
-                _buildStoryFooter(subtitle: footerSubtitle),
-              ],
-            ),
+              ),
+              Positioned(
+                bottom: 32,
+                left: -40,
+                child: Container(
+                  width: bottomCircleSize,
+                  height: bottomCircleSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: tone.withValues(alpha: 0.08),
+                  ),
+                ),
+              ),
+              // Decorative wave at bottom (wider and lower)
+              Positioned(
+                bottom: -14,
+                left: 0,
+                right: 0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(radius),
+                    bottomRight: Radius.circular(radius),
+                  ),
+                  child: CustomPaint(
+                    size: Size(width, effectiveWaveHeight),
+                    painter: _ModernWavePainter(
+                      color: tone.withValues(alpha: 0.12),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  sidePadding,
+                  topPadding,
+                  sidePadding,
+                  bottomPadding,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, contentConstraints) {
+                          if (_isTwitterFormat) {
+                            return SizedBox(
+                              width: contentWidth,
+                              height: contentConstraints.maxHeight,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: children,
+                              ),
+                            );
+                          }
+                          final content = SizedBox(
+                            width: contentWidth,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: children,
+                            ),
+                          );
+                          return FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.topCenter,
+                            child: content,
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildStoryFooter(
+                      subtitle: footerSubtitle,
+                      compact: _isTwitterFormat,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -3083,10 +3397,13 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
     );
   }
 
-  Widget _buildStoryFooter({String? subtitle}) {
+  Widget _buildStoryFooter({String? subtitle, bool compact = false}) {
     return Center(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 14 : 18,
+          vertical: compact ? 6 : 8,
+        ),
         decoration: BoxDecoration(
           color: _brownMedium.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(24),
@@ -3097,7 +3414,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
           children: [
             SvgPicture.asset(
               'assets/logoB.svg',
-              height: 16,
+              height: compact ? 14 : 16,
               colorFilter: const ColorFilter.mode(
                 _brownMedium,
                 BlendMode.srcIn,
@@ -3109,7 +3426,7 @@ class _StatsStoryScreenState extends State<StatsStoryScreen> {
               style: TextStyle(
                 fontFamily: 'HolyCream',
                 color: _brownMedium,
-                fontSize: 14,
+                fontSize: compact ? 12 : 14,
               ),
             ),
           ],
