@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../charts/donut_chart_painter.dart';
 import '../../theme/coffee_colors.dart';
 
-/// Widget donut chart avec animation et légende pour les genres
-/// Amélioration : Animation d'entrée + légende interactive + palette cohérente
+/// Widget donut chart avec animation et lÃ©gende pour les genres
+/// AmÃ©lioration : Animation d'entrÃ©e + lÃ©gende interactive + palette cohÃ©rente
 class GenreDonutChart extends StatefulWidget {
   final List<GenreData> genres;
   final String title;
@@ -11,7 +11,7 @@ class GenreDonutChart extends StatefulWidget {
   const GenreDonutChart({
     super.key,
     required this.genres,
-    this.title = "Répartition des genres",
+    this.title = "RÃ©partition des genres",
   });
 
   @override
@@ -22,17 +22,16 @@ class _GenreDonutChartState extends State<GenreDonutChart>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _animation;
-
-  // INITIATIVE : Palette de couleurs marron café premium
+  // Palette pastel pour une lecture plus claire des genres
   static const List<Color> _genrePalette = [
-    Color(0xFF5D4037), // Marron café foncé (principal)
-    Color(0xFF3E2723), // Espresso profond
-    Color(0xFF8D6E63), // Marron moyen
-    Color(0xFF4E342E), // Marron chocolat
-    Color(0xFFA1887F), // Marron clair
-    Color(0xFF6D4C41), // Marron torréfié
-    Color(0xFF795548), // Marron terreux
-    Color(0xFFBCAAA4), // Beige café
+    Color(0xFFBF9582), // Taupe rose
+    Color(0xFF8ECFC3), // Menthe
+    Color(0xFF9EB8EA), // Bleu
+    Color(0xFFF1B487), // Peche
+    Color(0xFFD8A9E3), // Lilas
+    Color(0xFFF0CF92), // Sable
+    Color(0xFFAED0A6), // Sauge
+    Color(0xFFD5B8A4), // Beige chaud
   ];
 
   @override
@@ -61,7 +60,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
       return _buildEmptyState();
     }
 
-    // Créer les segments avec couleurs
+    // CrÃ©er les segments avec couleurs
     final segments = widget.genres.asMap().entries.map((entry) {
       final index = entry.key;
       final genre = entry.value;
@@ -103,7 +102,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
           ),
           const SizedBox(height: 25),
 
-          // Donut + Légende
+          // Donut + LÃ©gende
           Row(
             children: [
               // Donut Chart
@@ -136,7 +135,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
               ),
               const SizedBox(width: 20),
 
-              // Légende
+              // LÃ©gende
               Expanded(
                 flex: 3,
                 child: Column(
@@ -172,7 +171,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
   }) {
     return Row(
       children: [
-        // Pastille colorée
+        // Pastille colorÃ©e
         Container(
           width: 14,
           height: 14,
@@ -215,10 +214,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
         ),
         Text(
           " ($count)",
-          style: const TextStyle(
-            fontSize: 11,
-            color: CoffeeColors.moka,
-          ),
+          style: const TextStyle(fontSize: 11, color: CoffeeColors.moka),
         ),
       ],
     );
@@ -237,7 +233,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
             Icon(Icons.movie_filter, size: 60, color: CoffeeColors.steamMilk),
             SizedBox(height: 15),
             Text(
-              "Aucune donnée",
+              "Aucune donnÃ©e",
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -251,7 +247,7 @@ class _GenreDonutChartState extends State<GenreDonutChart>
   }
 }
 
-/// Modèle de données pour un genre
+/// ModÃ¨le de donnÃ©es pour un genre
 class GenreData {
   final String genre;
   final int count;

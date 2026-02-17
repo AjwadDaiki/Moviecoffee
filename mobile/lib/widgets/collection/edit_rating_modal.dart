@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/movie.dart';
 import '../../api_service.dart';
+import '../../services/collection_notifier.dart';
 import '../app_ui_components.dart';
 
 /// Modale pour noter et éditer un film
@@ -29,7 +30,9 @@ class _EditRatingModalState extends State<EditRatingModal> {
   void initState() {
     super.initState();
     _rating = widget.movie.userRating ?? 0.0;
-    _commentController = TextEditingController(text: widget.movie.userComment ?? "");
+    _commentController = TextEditingController(
+      text: widget.movie.userComment ?? "",
+    );
   }
 
   @override
@@ -47,7 +50,7 @@ class _EditRatingModalState extends State<EditRatingModal> {
     setState(() => _isSaving = true);
 
     try {
-      await _api.sendAction(
+      await _api.sendActionV3(
         widget.movie.tmdbId,
         "RATE",
         rating: _rating,
@@ -55,6 +58,7 @@ class _EditRatingModalState extends State<EditRatingModal> {
       );
 
       if (mounted) {
+        collectionNotifier.notifyCollectionChanged();
         widget.onUpdated();
         Navigator.pop(context);
         _showSuccessSnackbar("Note enregistrée avec succès");
@@ -157,7 +161,9 @@ class _EditRatingModalState extends State<EditRatingModal> {
                   // Affichage de la note
                   Center(
                     child: Text(
-                      _rating > 0 ? "${_rating.toStringAsFixed(1)} / 5.0" : "Non notée",
+                      _rating > 0
+                          ? "${_rating.toStringAsFixed(1)} / 5.0"
+                          : "Non notée",
                       style: GoogleFonts.dmSans(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -259,10 +265,7 @@ class _HalfStarRating extends StatelessWidget {
   final double rating;
   final ValueChanged<double> onRatingChanged;
 
-  const _HalfStarRating({
-    required this.rating,
-    required this.onRatingChanged,
-  });
+  const _HalfStarRating({required this.rating, required this.onRatingChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -286,8 +289,8 @@ class _HalfStarRating extends StatelessWidget {
               index + 1 <= rating
                   ? Icons.star
                   : index + 0.5 <= rating
-                      ? Icons.star_half
-                      : Icons.star_border,
+                  ? Icons.star_half
+                  : Icons.star_border,
               size: 50,
               color: index + 0.5 <= rating ? Colors.amber : Colors.grey[400],
             ),

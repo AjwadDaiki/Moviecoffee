@@ -46,10 +46,14 @@ class ActivityEngagement {
     );
   }
 
-  ActivityEngagement copyWith({int? likesCount, bool? userHasLiked}) {
+  ActivityEngagement copyWith({
+    int? likesCount,
+    int? commentsCount,
+    bool? userHasLiked,
+  }) {
     return ActivityEngagement(
       likesCount: likesCount ?? this.likesCount,
-      commentsCount: commentsCount,
+      commentsCount: commentsCount ?? this.commentsCount,
       userHasLiked: userHasLiked ?? this.userHasLiked,
     );
   }

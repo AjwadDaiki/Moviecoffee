@@ -5,9 +5,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import '../theme/app_theme.dart';
+import '../theme/coffee_colors.dart';
 import '../api_service.dart';
 import '../models/models.dart';
 import '../services/collection_notifier.dart';
+import '../services/app_preferences.dart';
+import '../services/app_i18n.dart';
 
 /// =============================================================================
 /// FEED SCREEN 2026 - Design Moderne Premium
@@ -29,35 +32,73 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
   int _currentIndex = 0;
   String? _errorMessage;
   bool _hasReachedEnd = false;
+  bool _askSeenRatingPrompt = true;
 
   // Feed social (removed - now only in community_screen)
 
-  // Override pour le bouton "Déjà vu"
+  // Override pour le bouton "Deja vu"
   String? _nextActionOverride;
   double? _nextRatingOverride;
 
   // FILTRES
   String _selectedGenre = "Tous";
   int? _selectedYear;
+  String? _selectedDecade;
+  int? _selectedRuntimeMin;
+  int? _selectedRuntimeMax;
+  String? _selectedCountry;
+  double? _selectedMinRating;
+  String _feedMode = "personalized";
 
   final List<String> _genres = [
     "Tous",
     "Action",
-    "Comédie",
+    "Aventure",
+    "Comedie",
     "Drame",
     "Science-Fiction",
     "Horreur",
     "Romance",
     "Thriller",
+    "Mystere",
+    "Crime",
+    "Famille",
     "Documentaire",
+    "Guerre",
+    "Historique",
     "Animation",
   ];
 
-  final List<int> _years = [2024, 2023, 2022, 2021, 2020, 2019, 2018];
+  final List<int> _years = List<int>.generate(
+    DateTime.now().year - 1969,
+    (index) => DateTime.now().year - index,
+  );
+  final List<String> _decades = [
+    "2020s",
+    "2010s",
+    "2000s",
+    "1990s",
+    "1980s",
+    "1970s",
+  ];
+  final List<int> _runtimeOptions = [90, 110, 130, 150, 180];
+  final List<String> _countryOptions = [
+    "US",
+    "FR",
+    "GB",
+    "KR",
+    "JP",
+    "ES",
+    "IT",
+    "DE",
+    "IN",
+  ];
+  final List<double> _ratingOptions = [6.0, 6.5, 7.0, 7.5, 8.0];
 
   @override
   void initState() {
     super.initState();
+    _loadPreferences();
     _loadFeed();
   }
 
@@ -75,12 +116,18 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     });
 
     try {
-      final movies = await _api.fetchFeed(
+      final movies = await _api.fetchFeedAdvanced(
         genre: _selectedGenre != "Tous" ? _selectedGenre : null,
         year: _selectedYear,
+        decade: _selectedDecade,
+        runtimeMin: _selectedRuntimeMin,
+        runtimeMax: _selectedRuntimeMax,
+        country: _selectedCountry,
+        minRating: _selectedMinRating,
+        mode: _feedMode,
       );
       if (mounted) {
-        // Recréer le controller pour réinitialiser le swiper
+        // Recreer le controller pour reinitialiser le swiper
         _controller.dispose();
         _controller = CardSwiperController();
 
@@ -98,6 +145,55 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
           _errorMessage = e.message;
         });
       }
+    }
+  }
+
+  Future<void> _loadPreferences() async {
+    final askSeenRating = await AppPreferences.getAskSeenRating();
+    bool effectiveAskSeen = askSeenRating;
+    try {
+      final profile = await _api.getProfile();
+      final fromApi = profile?['user']?['ask_seen_rating_prompt'];
+      if (fromApi is bool) {
+        effectiveAskSeen = fromApi;
+        await AppPreferences.setAskSeenRating(fromApi);
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _askSeenRatingPrompt = effectiveAskSeen);
+  }
+
+  Future<void> _setAskSeenRatingPrompt(
+    bool value, {
+    bool showInfo = false,
+  }) async {
+    await AppPreferences.setAskSeenRating(value);
+    try {
+      await _api.updateProfile(askSeenRatingPrompt: value);
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _askSeenRatingPrompt = value);
+    if (showInfo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? AppI18n.t(
+                    'feed.rating_prompt_enabled',
+                    fallback: 'Demande de note reactivee.',
+                  )
+                : AppI18n.t(
+                    'feed.rating_prompt_disabled',
+                    fallback: 'Option desactivee. Reactivable dans Parametres.',
+                  ),
+          ),
+          backgroundColor: AppTheme.accent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
     }
   }
 
@@ -123,11 +219,11 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
         _showDiscreteMatchBadge(matches);
       }
 
-      // Notifier les autres écrans pour rafraîchir
+      // Notifier les autres ecrans pour rafraichir
       collectionNotifier.notifyCollectionChanged();
     } on ApiException catch (e) {
       // Debug uniquement
-      debugPrint("❌ Action failed: ${e.message}");
+      debugPrint("Action failed: ${e.message}");
     }
   }
 
@@ -183,12 +279,18 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     if (_hasReachedEnd) return;
     if (_currentIndex >= _movies.length) return;
     HapticFeedback.lightImpact();
-    // Show quick rating before marking as seen
+    if (!_askSeenRatingPrompt) {
+      _nextActionOverride = "SEEN";
+      _nextRatingOverride = null;
+      _controller.swipe(CardSwiperDirection.top);
+      return;
+    }
     _showQuickRating();
   }
 
   void _showQuickRating() {
     double selectedRating = 3.0;
+    bool disablePrompt = false;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -229,7 +331,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 4),
                 Text(
                   _currentIndex < _movies.length
-                      ? _movies[_currentIndex].title.fr
+                      ? _movies[_currentIndex].title.display
                       : '',
                   style: AppTheme.bodyMedium,
                   textAlign: TextAlign.center,
@@ -261,7 +363,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                               ? Icons.star_rounded
                               : Icons.star_outline_rounded,
                           color: isFull || isHalf
-                              ? const Color(0xFFFFC107)
+                              ? const Color(0xFF8A5A44)
                               : AppTheme.border,
                           size: 40,
                         ),
@@ -280,12 +382,43 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 20),
+                CheckboxListTile(
+                  dense: true,
+                  value: disablePrompt,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: AppTheme.accent,
+                  title: const Text(
+                    'Ne plus demander automatiquement',
+                    style: TextStyle(
+                      fontFamily: 'RecoletaAlt',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    "Cette option peut etre reactivee dans Parametres.",
+                    style: TextStyle(
+                      fontFamily: 'RecoletaAlt',
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  onChanged: (value) {
+                    setModalState(() => disablePrompt = value ?? false);
+                  },
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
                           Navigator.pop(ctx);
+                          if (disablePrompt) {
+                            _setAskSeenRatingPrompt(false, showInfo: true);
+                          }
                           // Mark as seen without rating
                           _nextActionOverride = "SEEN";
                           _nextRatingOverride = null;
@@ -316,6 +449,9 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                       child: GestureDetector(
                         onTap: () {
                           Navigator.pop(ctx);
+                          if (disablePrompt) {
+                            _setAskSeenRatingPrompt(false, showInfo: true);
+                          }
                           _nextActionOverride = "SEEN";
                           _nextRatingOverride = selectedRating;
                           _controller.swipe(CardSwiperDirection.top);
@@ -369,15 +505,41 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       builder: (context) => _FilterModal(
         selectedGenre: _selectedGenre,
         selectedYear: _selectedYear,
+        selectedDecade: _selectedDecade,
+        selectedRuntimeMin: _selectedRuntimeMin,
+        selectedRuntimeMax: _selectedRuntimeMax,
+        selectedCountry: _selectedCountry,
+        selectedMinRating: _selectedMinRating,
+        selectedMode: _feedMode,
         genres: _genres,
         years: _years,
-        onApply: (genre, year) {
-          setState(() {
-            _selectedGenre = genre;
-            _selectedYear = year;
-          });
-          _loadFeed();
-        },
+        decades: _decades,
+        runtimes: _runtimeOptions,
+        countries: _countryOptions,
+        ratingOptions: _ratingOptions,
+        onApply:
+            (
+              genre,
+              year,
+              decade,
+              runtimeMin,
+              runtimeMax,
+              country,
+              minRating,
+              mode,
+            ) {
+              setState(() {
+                _selectedGenre = genre;
+                _selectedYear = year;
+                _selectedDecade = decade;
+                _selectedRuntimeMin = runtimeMin;
+                _selectedRuntimeMax = runtimeMax;
+                _selectedCountry = country;
+                _selectedMinRating = minRating;
+                _feedMode = mode;
+              });
+              _loadFeed();
+            },
       ),
     );
   }
@@ -391,34 +553,30 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
       bottom: false,
       child: Column(
         children: [
-          // ═══════════════════════════════════════════════════════════════════
-          // HEADER - Titre + Counter + Filtre
-          // ═══════════════════════════════════════════════════════════════════
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    "Découvrir",
-                    style: const TextStyle(
-                      fontFamily: 'RecoletaAlt',
-                      fontSize: 30,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                _FilterButton(onTap: _showFilterModal),
-              ],
+          _buildDiscoverHeader(),
+          Expanded(child: _buildContent(bottomNavHeight + bottomPadding)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscoverHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              AppI18n.t('feed.discover', fallback: 'Decouvrir'),
+              style: TextStyle(
+                fontFamily: 'RecoletaAlt',
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
             ),
           ),
-
-          // ═══════════════════════════════════════════════════════════════════
-          // CONTENU PRINCIPAL
-          // ═══════════════════════════════════════════════════════════════════
-          Expanded(child: _buildContent(bottomNavHeight + bottomPadding)),
+          _FilterButton(onTap: _showFilterModal),
         ],
       ),
     );
@@ -439,23 +597,66 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
 
     return Stack(
       children: [
-        // ZONE SWIPER - Plus de place pour les cartes
+        // Zone swiper
         Positioned.fill(
-          bottom: bottomSpace + 70,
+          bottom: bottomSpace + 88,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: _buildSwiper(),
           ),
         ),
 
-        // ZONE ACTIONS - Vraiment collés à la nav bar
+        // Zone actions
         Positioned(
           left: 0,
           right: 0,
-          bottom: bottomSpace - 20,
+          bottom: bottomSpace - 24,
           child: _buildActionButtons(),
         ),
       ],
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 112,
+                child: _ActionButton(
+                  icon: Icons.close_rounded,
+                  size: 58,
+                  color: const Color(0xFFF3ECE2),
+                  iconColor: AppTheme.negative,
+                  borderColor: AppTheme.border,
+                  label: '',
+                  onTap: _triggerDislike,
+                ),
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 112,
+                child: _ActionButton(
+                  icon: Icons.favorite_rounded,
+                  size: 66,
+                  color: const Color(0xFF4A3529),
+                  iconColor: Colors.white,
+                  isAccent: true,
+                  label: '',
+                  onTap: _triggerLike,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _SeenButton(onTap: _triggerSeen),
+        ],
+      ),
     );
   }
 
@@ -473,7 +674,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
         vertical: true,
       ),
       onEnd: () {
-        // Quand toutes les cartes sont swipées
+        // Quand toutes les cartes sont swipees
         setState(() => _hasReachedEnd = true);
       },
       onSwipe: (previousIndex, currentIndex, direction) {
@@ -504,40 +705,6 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
           child: _ModernMovieCard(movie: _movies[index]),
         );
       },
-    );
-  }
-
-  Widget _buildActionButtons() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // DISLIKE - LIKE (ligne principale)
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _ActionButton(
-              icon: Icons.close_rounded,
-              size: 60,
-              color: AppTheme.surface,
-              iconColor: AppTheme.negative,
-              borderColor: AppTheme.border,
-              onTap: _triggerDislike,
-            ),
-            const SizedBox(width: 40),
-            _ActionButton(
-              icon: Icons.favorite_rounded,
-              size: 72,
-              color: AppTheme.accent,
-              iconColor: Colors.white,
-              isAccent: true,
-              onTap: _triggerLike,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        // BOUTON "DÉJÀ VU" - Centré en dessous
-        _SeenButton(onTap: _triggerSeen),
-      ],
     );
   }
 
@@ -602,7 +769,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
             const SizedBox(height: 8),
             Text(
               _hasReachedEnd
-                  ? "Rechargez pour découvrir d'autres films"
+                  ? "Rechargez pour decouvrir d'autres films"
                   : "Modifiez vos filtres ou revenez plus tard",
               style: AppTheme.bodyMedium,
               textAlign: TextAlign.center,
@@ -640,7 +807,13 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 24),
-            Text("Erreur de connexion", style: AppTheme.titleLarge),
+            Text(
+              AppI18n.t(
+                'feed.connection_error',
+                fallback: 'Erreur de connexion',
+              ),
+              style: AppTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
               _errorMessage ?? "Une erreur est survenue",
@@ -649,7 +822,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 32),
             _ModernButton(
-              label: "Réessayer",
+              label: AppI18n.t('action.retry', fallback: 'Reessayer'),
               icon: Icons.refresh_rounded,
               onTap: _loadFeed,
             ),
@@ -692,13 +865,23 @@ class _FilterButtonState extends State<_FilterButton> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.accent, AppTheme.accentDark],
-            ),
+            color: const Color(0xFFF3E7D8),
             borderRadius: BorderRadius.circular(14),
-            boxShadow: AppTheme.shadowAccent(AppTheme.accent),
+            border: Border.all(color: const Color(0xFFD8C2AA)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF5A4337).withValues(alpha: 0.18),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+                spreadRadius: -2,
+              ),
+            ],
           ),
-          child: const Icon(Icons.tune_rounded, color: Colors.white, size: 22),
+          child: const Icon(
+            Icons.tune_rounded,
+            color: Color(0xFF5A4337),
+            size: 22,
+          ),
         ),
       ),
     );
@@ -780,7 +963,7 @@ class _ModernMovieCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          movie.title.fr,
+                          movie.title.display,
                           style: GoogleFonts.poppins(
                             color: Colors.white,
                             fontSize: 24,
@@ -834,7 +1017,7 @@ class _ModernMovieCard extends StatelessWidget {
               ),
             ),
 
-            // INDICATEUR DÉTAILS
+            // INDICATEUR DETAILS
             Positioned(
               top: 16,
               right: 16,
@@ -864,7 +1047,7 @@ class _ModernMovieCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          "Détails",
+                          "Details",
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.9),
                             fontSize: 12,
@@ -933,6 +1116,7 @@ class _ActionButton extends StatefulWidget {
   final Color iconColor;
   final Color? borderColor;
   final bool isAccent;
+  final String label;
   final VoidCallback onTap;
 
   const _ActionButton({
@@ -942,6 +1126,7 @@ class _ActionButton extends StatefulWidget {
     required this.iconColor,
     this.borderColor,
     this.isAccent = false,
+    required this.label,
     required this.onTap,
   });
 
@@ -954,6 +1139,7 @@ class _ActionButtonState extends State<_ActionButton> {
 
   @override
   Widget build(BuildContext context) {
+    final hasLabel = widget.label.trim().isNotEmpty;
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) {
@@ -964,24 +1150,41 @@ class _ActionButtonState extends State<_ActionButton> {
       child: AnimatedScale(
         scale: _isPressed ? 0.9 : 1.0,
         duration: AppTheme.durationFast,
-        child: Container(
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: widget.color,
-            shape: BoxShape.circle,
-            border: widget.borderColor != null
-                ? Border.all(color: widget.borderColor!, width: 1.5)
-                : null,
-            boxShadow: widget.isAccent
-                ? AppTheme.shadowAccent(widget.color)
-                : AppTheme.shadowMedium,
-          ),
-          child: Icon(
-            widget.icon,
-            color: widget.iconColor,
-            size: widget.size * 0.4,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                color: widget.color,
+                shape: BoxShape.circle,
+                border: widget.borderColor != null
+                    ? Border.all(color: widget.borderColor!, width: 1.5)
+                    : null,
+                boxShadow: widget.isAccent
+                    ? AppTheme.shadowAccent(widget.color)
+                    : AppTheme.shadowSmall,
+              ),
+              child: Icon(
+                widget.icon,
+                color: widget.iconColor,
+                size: widget.size * 0.4,
+              ),
+            ),
+            if (hasLabel) ...[
+              const SizedBox(height: 6),
+              Text(
+                widget.label,
+                style: const TextStyle(
+                  fontFamily: 'RecoletaAlt',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: CoffeeColors.moka,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -1023,7 +1226,7 @@ class _SeenButtonState extends State<_SeenButton> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: AppTheme.surface.withValues(alpha: 0.9),
+                color: const Color(0xFFF6F0E6),
                 borderRadius: BorderRadius.circular(50),
                 border: Border.all(color: AppTheme.border, width: 1),
                 boxShadow: AppTheme.shadowSmall,
@@ -1038,7 +1241,7 @@ class _SeenButtonState extends State<_SeenButton> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    "Déjà vu",
+                    "Deja vu",
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -1092,11 +1295,16 @@ class _ModernButtonState extends State<_ModernButton> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.accent, AppTheme.accentDark],
-            ),
+            color: const Color(0xFF4A3529),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: AppTheme.shadowAccent(AppTheme.accent),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4A3529).withValues(alpha: 0.3),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+                spreadRadius: -2,
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1126,15 +1334,45 @@ class _ModernButtonState extends State<_ModernButton> {
 class _FilterModal extends StatefulWidget {
   final String selectedGenre;
   final int? selectedYear;
+  final String? selectedDecade;
+  final int? selectedRuntimeMin;
+  final int? selectedRuntimeMax;
+  final String? selectedCountry;
+  final double? selectedMinRating;
+  final String selectedMode;
   final List<String> genres;
   final List<int> years;
-  final Function(String genre, int? year) onApply;
+  final List<String> decades;
+  final List<int> runtimes;
+  final List<String> countries;
+  final List<double> ratingOptions;
+  final Function(
+    String genre,
+    int? year,
+    String? decade,
+    int? runtimeMin,
+    int? runtimeMax,
+    String? country,
+    double? minRating,
+    String mode,
+  )
+  onApply;
 
   const _FilterModal({
     required this.selectedGenre,
     required this.selectedYear,
+    required this.selectedDecade,
+    required this.selectedRuntimeMin,
+    required this.selectedRuntimeMax,
+    required this.selectedCountry,
+    required this.selectedMinRating,
+    required this.selectedMode,
     required this.genres,
     required this.years,
+    required this.decades,
+    required this.runtimes,
+    required this.countries,
+    required this.ratingOptions,
     required this.onApply,
   });
 
@@ -1145,18 +1383,134 @@ class _FilterModal extends StatefulWidget {
 class _FilterModalState extends State<_FilterModal> {
   late String _genre;
   late int? _year;
+  late String? _decade;
+  late int? _runtimeMin;
+  late int? _runtimeMax;
+  late String? _country;
+  late double? _minRating;
+  late String _mode;
+  late bool _useExactYear;
+  String? _expandedSection = 'mode';
+
+  String _runtimeLabel(int minutes) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    if (h == 0) return '${minutes}min';
+    if (m == 0) return '${h}h';
+    return '${h}h${m.toString().padLeft(2, '0')}';
+  }
 
   @override
   void initState() {
     super.initState();
     _genre = widget.selectedGenre;
     _year = widget.selectedYear;
+    _decade = widget.selectedDecade;
+    _runtimeMin = widget.selectedRuntimeMin;
+    _runtimeMax = widget.selectedRuntimeMax;
+    _country = widget.selectedCountry;
+    _minRating = widget.selectedMinRating;
+    _mode = widget.selectedMode;
+    _useExactYear = _year != null;
+  }
+
+  String _summaryForSection(String section) {
+    switch (section) {
+      case 'mode':
+        return _mode == 'popular' ? 'Populaire' : 'Personnalise';
+      case 'genre':
+        return _genre;
+      case 'release':
+        if (_year != null) return 'Annee $_year';
+        return _decade ?? 'Toutes';
+      case 'runtime':
+        if (_runtimeMin == null && _runtimeMax == null) return 'Libre';
+        if (_runtimeMin != null && _runtimeMax != null) {
+          return '${_runtimeLabel(_runtimeMin!)} - ${_runtimeLabel(_runtimeMax!)}';
+        }
+        if (_runtimeMin != null) return 'Min ${_runtimeLabel(_runtimeMin!)}';
+        return 'Max ${_runtimeLabel(_runtimeMax!)}';
+      case 'country':
+        return _country ?? 'Tous';
+      case 'rating':
+        return _minRating == null
+            ? 'Aucune'
+            : 'Au moins ${_minRating!.toStringAsFixed(1)} / 10';
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildExpandableSection({
+    required String keyName,
+    required String title,
+    required Widget content,
+  }) {
+    final isOpen = _expandedSection == keyName;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border.withValues(alpha: 0.7)),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => setState(() {
+              _expandedSection = isOpen ? null : keyName;
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: AppTheme.labelLarge),
+                        const SizedBox(height: 2),
+                        Text(
+                          _summaryForSection(keyName),
+                          style: AppTheme.caption.copyWith(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isOpen
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: AppTheme.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: content,
+            ),
+            crossFadeState: isOpen
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: AppTheme.durationFast,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.65,
+      height: MediaQuery.of(context).size.height * 0.82,
       decoration: BoxDecoration(
         color: AppTheme.background,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
@@ -1178,15 +1532,31 @@ class _FilterModalState extends State<_FilterModal> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Filtres", style: AppTheme.titleLarge),
-                if (_genre != "Tous" || _year != null)
+                Text(
+                  AppI18n.t('feed.filters_title', fallback: 'Tri et filtres'),
+                  style: AppTheme.titleLarge,
+                ),
+                if (_genre != "Tous" ||
+                    _mode != "personalized" ||
+                    _year != null ||
+                    _decade != null ||
+                    _runtimeMin != null ||
+                    _runtimeMax != null ||
+                    _country != null ||
+                    _minRating != null)
                   GestureDetector(
                     onTap: () => setState(() {
+                      _mode = "personalized";
                       _genre = "Tous";
                       _year = null;
+                      _decade = null;
+                      _runtimeMin = null;
+                      _runtimeMax = null;
+                      _country = null;
+                      _minRating = null;
                     }),
                     child: Text(
-                      "Réinitialiser",
+                      AppI18n.t('action.reset', fallback: 'Reinitialiser'),
                       style: AppTheme.labelLarge.copyWith(
                         color: AppTheme.accent,
                       ),
@@ -1202,39 +1572,327 @@ class _FilterModalState extends State<_FilterModal> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Genre", style: AppTheme.labelLarge),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: widget.genres.map((genre) {
-                      return _PillChip(
-                        label: genre,
-                        isSelected: _genre == genre,
-                        onTap: () => setState(() => _genre = genre),
-                      );
-                    }).toList(),
+                  _buildExpandableSection(
+                    keyName: 'mode',
+                    title: AppI18n.t(
+                      'feed.filter_sort',
+                      fallback: 'Tri du feed',
+                    ),
+                    content: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _PillChip(
+                          label: "Pour toi",
+                          isSelected: _mode == "personalized",
+                          onTap: () => setState(() => _mode = "personalized"),
+                        ),
+                        _PillChip(
+                          label: "Populaire",
+                          isSelected: _mode == "popular",
+                          onTap: () => setState(() => _mode = "popular"),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 28),
-                  Text("Année", style: AppTheme.labelLarge),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _PillChip(
-                        label: "Toutes",
-                        isSelected: _year == null,
-                        onTap: () => setState(() => _year = null),
-                      ),
-                      ...widget.years.map((year) {
+                  _buildExpandableSection(
+                    keyName: 'genre',
+                    title: AppI18n.t('feed.filter_genre', fallback: 'Genre'),
+                    content: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: widget.genres.map((genre) {
                         return _PillChip(
-                          label: year.toString(),
-                          isSelected: _year == year,
-                          onTap: () => setState(() => _year = year),
+                          label: genre,
+                          isSelected: _genre == genre,
+                          onTap: () => setState(() => _genre = genre),
                         );
-                      }),
-                    ],
+                      }).toList(),
+                    ),
+                  ),
+                  _buildExpandableSection(
+                    keyName: 'release',
+                    title: AppI18n.t('feed.filter_release', fallback: 'Sortie'),
+                    content: Builder(
+                      builder: (context) {
+                        final maxYear = widget.years.isNotEmpty
+                            ? widget.years.first
+                            : DateTime.now().year;
+                        final minYear = widget.years.isNotEmpty
+                            ? widget.years.last
+                            : 1970;
+                        final selectedYearValue = (_year ?? maxYear).clamp(
+                          minYear,
+                          maxYear,
+                        );
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _PillChip(
+                                  label: "Toutes",
+                                  isSelected: !_useExactYear && _decade == null,
+                                  onTap: () => setState(() {
+                                    _useExactYear = false;
+                                    _year = null;
+                                    _decade = null;
+                                  }),
+                                ),
+                                _PillChip(
+                                  label: "Cette annee",
+                                  isSelected:
+                                      _useExactYear &&
+                                      _year == DateTime.now().year,
+                                  onTap: () => setState(() {
+                                    _useExactYear = true;
+                                    _decade = null;
+                                    _year = DateTime.now().year;
+                                  }),
+                                ),
+                                ...widget.decades.map((decade) {
+                                  return _PillChip(
+                                    label: decade,
+                                    isSelected:
+                                        !_useExactYear && _decade == decade,
+                                    onTap: () => setState(() {
+                                      _useExactYear = false;
+                                      _decade = decade;
+                                      _year = null;
+                                    }),
+                                  );
+                                }),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.background.withValues(
+                                  alpha: 0.55,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppTheme.border.withValues(alpha: 0.8),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      "Annee precise",
+                                      style: TextStyle(
+                                        fontFamily: 'RecoletaAlt',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  Switch.adaptive(
+                                    value: _useExactYear,
+                                    activeThumbColor: AppTheme.accent,
+                                    activeTrackColor: AppTheme.accentSoft,
+                                    onChanged: (enabled) => setState(() {
+                                      _useExactYear = enabled;
+                                      if (enabled) {
+                                        _decade = null;
+                                        _year ??= maxYear;
+                                      } else {
+                                        _year = null;
+                                      }
+                                    }),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_useExactYear) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 3,
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 7,
+                                        ),
+                                        overlayShape:
+                                            const RoundSliderOverlayShape(
+                                              overlayRadius: 14,
+                                            ),
+                                      ),
+                                      child: Slider(
+                                        value: selectedYearValue.toDouble(),
+                                        min: minYear.toDouble(),
+                                        max: maxYear.toDouble(),
+                                        divisions: maxYear - minYear,
+                                        activeColor: AppTheme.accent,
+                                        inactiveColor: AppTheme.border,
+                                        onChanged: (value) => setState(() {
+                                          _year = value.round();
+                                        }),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.accentSoft,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '$selectedYearValue',
+                                      style: const TextStyle(
+                                        fontFamily: 'RecoletaAlt',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.accentDark,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  _buildExpandableSection(
+                    keyName: 'runtime',
+                    title: AppI18n.t('feed.filter_duration', fallback: 'Duree'),
+                    content: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Minimum",
+                          style: TextStyle(
+                            fontFamily: 'RecoletaAlt',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _PillChip(
+                              label: "Aucune",
+                              isSelected: _runtimeMin == null,
+                              onTap: () => setState(() => _runtimeMin = null),
+                            ),
+                            ...widget.runtimes.map((runtime) {
+                              return _PillChip(
+                                label: "Min ${_runtimeLabel(runtime)}",
+                                isSelected: _runtimeMin == runtime,
+                                onTap: () => setState(() {
+                                  _runtimeMin = runtime;
+                                  if (_runtimeMax != null &&
+                                      runtime > _runtimeMax!) {
+                                    _runtimeMax = runtime;
+                                  }
+                                }),
+                              );
+                            }),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          "Maximum",
+                          style: TextStyle(
+                            fontFamily: 'RecoletaAlt',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _PillChip(
+                              label: "Aucune",
+                              isSelected: _runtimeMax == null,
+                              onTap: () => setState(() => _runtimeMax = null),
+                            ),
+                            ...widget.runtimes.map((runtime) {
+                              return _PillChip(
+                                label: "Max ${_runtimeLabel(runtime)}",
+                                isSelected: _runtimeMax == runtime,
+                                onTap: () => setState(() {
+                                  _runtimeMax = runtime;
+                                  if (_runtimeMin != null &&
+                                      runtime < _runtimeMin!) {
+                                    _runtimeMin = runtime;
+                                  }
+                                }),
+                              );
+                            }),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildExpandableSection(
+                    keyName: 'country',
+                    title: AppI18n.t('feed.filter_country', fallback: 'Pays'),
+                    content: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _PillChip(
+                          label: "Tous",
+                          isSelected: _country == null,
+                          onTap: () => setState(() => _country = null),
+                        ),
+                        ...widget.countries.map((country) {
+                          return _PillChip(
+                            label: country,
+                            isSelected: _country == country,
+                            onTap: () => setState(() => _country = country),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                  _buildExpandableSection(
+                    keyName: 'rating',
+                    title: AppI18n.t(
+                      'feed.filter_min_rating',
+                      fallback: 'Note TMDB mini',
+                    ),
+                    content: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _PillChip(
+                          label: "Aucune",
+                          isSelected: _minRating == null,
+                          onTap: () => setState(() => _minRating = null),
+                        ),
+                        ...widget.ratingOptions.map((rating) {
+                          return _PillChip(
+                            label: "Min ${rating.toStringAsFixed(1)}",
+                            isSelected: _minRating == rating,
+                            onTap: () => setState(() => _minRating = rating),
+                          );
+                        }),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 32),
                 ],
@@ -1251,11 +1909,20 @@ class _FilterModalState extends State<_FilterModal> {
             child: SizedBox(
               width: double.infinity,
               child: _ModernButton(
-                label: "Appliquer",
+                label: AppI18n.t('action.apply', fallback: 'Appliquer'),
                 icon: Icons.check_rounded,
                 onTap: () {
                   Navigator.pop(context);
-                  widget.onApply(_genre, _year);
+                  widget.onApply(
+                    _genre,
+                    _year,
+                    _decade,
+                    _runtimeMin,
+                    _runtimeMax,
+                    _country,
+                    _minRating,
+                    _mode,
+                  );
                 },
               ),
             ),
@@ -1346,7 +2013,7 @@ class _MovieDetailSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(movie.title.fr, style: AppTheme.displayMedium),
+                  Text(movie.title.display, style: AppTheme.displayMedium),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -1389,9 +2056,12 @@ class _MovieDetailSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                   ],
-                  Text("Synopsis", style: AppTheme.titleMedium),
+                  Text(
+                    AppI18n.t('feed.synopsis', fallback: 'Synopsis'),
+                    style: AppTheme.titleMedium,
+                  ),
                   const SizedBox(height: 12),
-                  Text(movie.overview.fr, style: AppTheme.bodyLarge),
+                  Text(movie.overview.display, style: AppTheme.bodyLarge),
                 ],
               ),
             ),

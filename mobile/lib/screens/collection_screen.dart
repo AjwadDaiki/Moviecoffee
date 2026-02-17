@@ -7,6 +7,7 @@ import '../widgets/collection/edit_rating_modal.dart';
 import '../api_service.dart';
 import '../models/movie.dart';
 import '../services/collection_notifier.dart';
+import '../services/app_i18n.dart';
 import 'library_screen.dart';
 import 'movie_detail_screen.dart';
 
@@ -34,6 +35,7 @@ class _CollectionScreenState extends State<CollectionScreen>
   List<Movie> _seenNotRated = []; // Vu mais pas noté
   List<Movie> _allMovies = []; // TOUS les films (v3)
   bool _isLoading = true;
+  bool _isAiPicking = false;
   String? _errorMessage;
 
   // Filtres
@@ -41,6 +43,9 @@ class _CollectionScreenState extends State<CollectionScreen>
   String _searchQuery = "";
   String _searchType = "title"; // title, actor, director, genre
   String _sortBy = "date"; // date, rating, title, vote, year, runtime, genre
+  String? _genreFilter;
+  String? _yearFilter;
+  final List<int> _aiRuntimeOptions = const [90, 110, 130, 150];
 
   // Animation
   late AnimationController _filterAnimController;
@@ -106,7 +111,7 @@ class _CollectionScreenState extends State<CollectionScreen>
         sorter = (a, b) => (b.userRating ?? 0).compareTo(a.userRating ?? 0);
         break;
       case 'title':
-        sorter = (a, b) => a.title.fr.compareTo(b.title.fr);
+        sorter = (a, b) => a.title.display.compareTo(b.title.display);
         break;
       case 'vote':
         sorter = (a, b) => b.voteAverage.compareTo(a.voteAverage);
@@ -164,6 +169,20 @@ class _CollectionScreenState extends State<CollectionScreen>
         break;
     }
 
+    if (_genreFilter != null) {
+      final selected = _genreFilter!.toLowerCase();
+      movies = movies
+          .where(
+            (movie) =>
+                movie.genres.any((genre) => genre.toLowerCase() == selected),
+          )
+          .toList();
+    }
+
+    if (_yearFilter != null) {
+      movies = movies.where((movie) => movie.year == _yearFilter).toList();
+    }
+
     // Appliquer la recherche
     if (_searchQuery.isEmpty) return movies;
 
@@ -174,18 +193,18 @@ class _CollectionScreenState extends State<CollectionScreen>
           return movie.actors.any(
                 (actor) => actor.toLowerCase().contains(query),
               ) ||
-              movie.title.fr.toLowerCase().contains(query);
+              movie.title.display.toLowerCase().contains(query);
         case 'director':
           // Note: directors n'est pas dans le modèle, on cherche dans le titre pour l'instant
-          return movie.title.fr.toLowerCase().contains(query);
+          return movie.title.display.toLowerCase().contains(query);
         case 'genre':
           return movie.genres.any(
                 (genre) => genre.toLowerCase().contains(query),
               ) ||
-              movie.title.fr.toLowerCase().contains(query);
+              movie.title.display.toLowerCase().contains(query);
         case 'title':
         default:
-          return movie.title.fr.toLowerCase().contains(query);
+          return movie.title.display.toLowerCase().contains(query);
       }
     }).toList();
   }
@@ -198,7 +217,7 @@ class _CollectionScreenState extends State<CollectionScreen>
         builder: (context) => MovieDetailScreen(
           tmdbId: movie.tmdbId,
           posterUrl: movie.posterPath,
-          title: movie.title.fr,
+          title: movie.title.display,
         ),
       ),
     );
@@ -231,6 +250,50 @@ class _CollectionScreenState extends State<CollectionScreen>
     );
   }
 
+  List<String> get _availableGenres {
+    final values = <String>{};
+    for (final movie in [..._toSee, ..._seen]) {
+      for (final genre in movie.genres) {
+        final normalized = genre.trim();
+        if (normalized.isNotEmpty) values.add(normalized);
+      }
+    }
+    final list = values.toList()..sort();
+    return list;
+  }
+
+  List<String> get _availableYears {
+    final values = <String>{};
+    for (final movie in [..._toSee, ..._seen]) {
+      final year = movie.year.trim();
+      if (year.isNotEmpty) values.add(year);
+    }
+    final list = values.toList()
+      ..sort((a, b) => int.parse(b).compareTo(int.parse(a)));
+    return list;
+  }
+
+  bool get _hasAdvancedFilters => _genreFilter != null || _yearFilter != null;
+
+  void _showAdvancedFilters() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _CollectionFilterModal(
+        genres: _availableGenres,
+        years: _availableYears,
+        currentGenre: _genreFilter,
+        currentYear: _yearFilter,
+        onApply: (genre, year) {
+          setState(() {
+            _genreFilter = genre;
+            _yearFilter = year;
+          });
+        },
+      ),
+    );
+  }
+
   void _showSearchTypeOptions() {
     showModalBottomSheet(
       context: context,
@@ -241,6 +304,249 @@ class _CollectionScreenState extends State<CollectionScreen>
           setState(() {
             _searchType = type;
           });
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickCollectionWithAi({
+    required String source,
+    String? mood,
+    int? runtimeMax,
+    String? era,
+  }) async {
+    if (_isAiPicking) return;
+    setState(() => _isAiPicking = true);
+    try {
+      final response = await _api.fetchSoloAiChoice(
+        source: source,
+        mood: mood,
+        runtimeMax: runtimeMax,
+        era: era,
+      );
+      if (!mounted) return;
+      final movieJson = response?['movie'];
+      if (movieJson is! Map<String, dynamic>) {
+        setState(() => _isAiPicking = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Aucun film trouve. Ajustez les options IA."),
+          ),
+        );
+        return;
+      }
+
+      final movie = Movie.fromJson(movieJson);
+      final reason = (response?['reason'] ?? "Reco basee sur vos likes")
+          .toString();
+
+      setState(() => _isAiPicking = false);
+      HapticFeedback.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("IA: ${movie.title.display} | $reason"),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF4A3529),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      _openMovieDetail(movie);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isAiPicking = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isAiPicking = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Erreur IA. Reessayez.")));
+    }
+  }
+
+  void _showCollectionAiPickerModal() {
+    if (_isAiPicking) return;
+    String selectedSource = "collection";
+    String? selectedMood;
+    int? selectedRuntime;
+    String? selectedEra;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              20,
+              24,
+              MediaQuery.of(ctx).padding.bottom + 20,
+            ),
+            decoration: const BoxDecoration(
+              color: AppTheme.background,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  "IA Collection",
+                  style: TextStyle(
+                    fontFamily: 'RecoletaAlt',
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Laissez les options vides pour une reco basee sur vos likes.",
+                  style: AppTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                Text("Source", style: AppTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _AiOptionChip(
+                      label: "Collection",
+                      isSelected: selectedSource == "collection",
+                      onTap: () =>
+                          setModalState(() => selectedSource = "collection"),
+                    ),
+                    _AiOptionChip(
+                      label: "Watchlist",
+                      isSelected: selectedSource == "wishlist",
+                      onTap: () =>
+                          setModalState(() => selectedSource = "wishlist"),
+                    ),
+                    _AiOptionChip(
+                      label: "All Time",
+                      isSelected: selectedSource == "alltime",
+                      onTap: () =>
+                          setModalState(() => selectedSource = "alltime"),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text("Genre (optionnel)", style: AppTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _AiOptionChip(
+                      label: "Aucun",
+                      isSelected: selectedMood == null,
+                      onTap: () => setModalState(() => selectedMood = null),
+                    ),
+                    ..._availableGenres
+                        .take(8)
+                        .map(
+                          (genre) => _AiOptionChip(
+                            label: genre,
+                            isSelected: selectedMood == genre,
+                            onTap: () => setModalState(
+                              () => selectedMood = selectedMood == genre
+                                  ? null
+                                  : genre,
+                            ),
+                          ),
+                        ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text("Periode (optionnel)", style: AppTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _AiOptionChip(
+                      label: "Aucune",
+                      isSelected: selectedEra == null,
+                      onTap: () => setModalState(() => selectedEra = null),
+                    ),
+                    _AiOptionChip(
+                      label: "Recent",
+                      isSelected: selectedEra == "recent",
+                      onTap: () => setModalState(
+                        () => selectedEra = selectedEra == "recent"
+                            ? null
+                            : "recent",
+                      ),
+                    ),
+                    _AiOptionChip(
+                      label: "Retro",
+                      isSelected: selectedEra == "retro",
+                      onTap: () => setModalState(
+                        () => selectedEra = selectedEra == "retro"
+                            ? null
+                            : "retro",
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text("Duree max", style: AppTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _AiOptionChip(
+                      label: "Libre",
+                      isSelected: selectedRuntime == null,
+                      onTap: () => setModalState(() => selectedRuntime = null),
+                    ),
+                    ..._aiRuntimeOptions.map(
+                      (runtime) => _AiOptionChip(
+                        label: "Max $runtime min",
+                        isSelected: selectedRuntime == runtime,
+                        onTap: () =>
+                            setModalState(() => selectedRuntime = runtime),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: _ActionButton(
+                    label: "Trouver avec IA",
+                    icon: Icons.auto_awesome_rounded,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickCollectionWithAi(
+                        source: selectedSource,
+                        mood: selectedMood,
+                        runtimeMax: selectedRuntime,
+                        era: selectedEra,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
         },
       ),
     );
@@ -263,8 +569,8 @@ class _CollectionScreenState extends State<CollectionScreen>
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Collection",
+                    Text(
+                      AppI18n.t('collection.title', fallback: 'Collection'),
                       style: TextStyle(
                         fontFamily: 'RecoletaAlt',
                         fontSize: 30,
@@ -285,9 +591,13 @@ class _CollectionScreenState extends State<CollectionScreen>
                   ],
                 ),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildStats(),
-                    const SizedBox(width: 12),
+                    _CollectionAiButton(
+                      onTap: _showCollectionAiPickerModal,
+                      isLoading: _isAiPicking,
+                    ),
+                    const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () {
                         Navigator.push(
@@ -311,7 +621,12 @@ class _CollectionScreenState extends State<CollectionScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
+                    _CollectionFilterButton(
+                      onTap: _showAdvancedFilters,
+                      isActive: _hasAdvancedFilters,
+                    ),
+                    const SizedBox(width: 8),
                     _SortButton(onTap: _showSortOptions),
                   ],
                 ),
@@ -333,6 +648,55 @@ class _CollectionScreenState extends State<CollectionScreen>
             ),
           ),
           const SizedBox(height: 16),
+          if (_hasAdvancedFilters)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "Filtres actifs: ${_genreFilter ?? 'Tous genres'}${_yearFilter != null ? ' / $_yearFilter' : ''}",
+                      style: const TextStyle(
+                        fontFamily: 'RecoletaAlt',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFE8E0D5),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _genreFilter = null;
+                        _yearFilter = null;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: const Text(
+                        'Effacer',
+                        style: TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // ═══════════════════════════════════════════════════════════════════
           // FILTRES CHIPS MODERNES
@@ -344,7 +708,7 @@ class _CollectionScreenState extends State<CollectionScreen>
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
                 _FilterChip(
-                  label: "Tout",
+                  label: AppI18n.t('collection.tab.all', fallback: 'Tout'),
                   icon: Icons.grid_view_rounded,
                   isActive: _activeFilter == "all",
                   count: _toSee.length + _seen.length,
@@ -352,7 +716,7 @@ class _CollectionScreenState extends State<CollectionScreen>
                 ),
                 const SizedBox(width: 10),
                 _FilterChip(
-                  label: "À voir",
+                  label: AppI18n.t('collection.tab.to_see', fallback: 'A voir'),
                   icon: Icons.bookmark_rounded,
                   isActive: _activeFilter == "toSee",
                   count: _toSee.length,
@@ -360,7 +724,10 @@ class _CollectionScreenState extends State<CollectionScreen>
                 ),
                 const SizedBox(width: 10),
                 _FilterChip(
-                  label: "À noter",
+                  label: AppI18n.t(
+                    'collection.tab.to_rate',
+                    fallback: 'A noter',
+                  ),
                   icon: Icons.rate_review_rounded,
                   isActive: _activeFilter == "seenNotRated",
                   count: _seenNotRated.length,
@@ -368,11 +735,34 @@ class _CollectionScreenState extends State<CollectionScreen>
                 ),
                 const SizedBox(width: 10),
                 _FilterChip(
-                  label: "Notés",
+                  label: AppI18n.t('collection.tab.rated', fallback: 'Notes'),
                   icon: Icons.star_rounded,
                   isActive: _activeFilter == "rated",
                   count: _seen.where((m) => m.isRated).length,
                   onTap: () => setState(() => _activeFilter = "rated"),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.swipe_rounded,
+                  size: 14,
+                  color: Color(0xFFE8D7C4),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  "Glissez les onglets pour voir Notés",
+                  style: const TextStyle(
+                    fontFamily: 'RecoletaAlt',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFE8D7C4),
+                  ),
                 ),
               ],
             ),
@@ -395,6 +785,12 @@ class _CollectionScreenState extends State<CollectionScreen>
   }
 
   String? _getSubtitle() {
+    if (_hasAdvancedFilters) {
+      final genre = _genreFilter ?? 'Tous genres';
+      final year = _yearFilter ?? 'Toutes annees';
+      return "Filtres: $genre / $year";
+    }
+
     if (_sortBy != "date") {
       switch (_sortBy) {
         case 'rating':
@@ -425,23 +821,6 @@ class _CollectionScreenState extends State<CollectionScreen>
       default:
         return "Rechercher un film...";
     }
-  }
-
-  Widget _buildStats() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppTheme.accentSoft,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        "${_toSee.length + _seen.length} films",
-        style: AppTheme.caption.copyWith(
-          color: AppTheme.accent,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
   }
 
   Widget _buildLoadingState() {
@@ -548,7 +927,9 @@ class _CollectionScreenState extends State<CollectionScreen>
             showRating: _activeFilter == "rated",
             onTap: () => _openMovieDetail(movies[index]),
             onLongPress: () => _openRatingModal(movies[index]),
-            onRateTap: () => _openRatingModal(movies[index]),
+            onRateTap: _activeFilter == "all"
+                ? null
+                : () => _openRatingModal(movies[index]),
           );
         },
       ),
@@ -857,8 +1238,28 @@ class _ModernMovieCard extends StatefulWidget {
 class _ModernMovieCardState extends State<_ModernMovieCard> {
   bool _isPressed = false;
 
+  void _openEditor() {
+    if (widget.onRateTap == null) return;
+    widget.onRateTap!.call();
+  }
+
+  String get _compactCommentPreview {
+    final raw = (widget.movie.userComment ?? "").trim();
+    if (raw.isEmpty) return "";
+    final normalized = raw.replaceAll(RegExp(r"\s+"), " ");
+    if (normalized.length <= 42) return normalized;
+    return "${normalized.substring(0, 39)}...";
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isRated = widget.movie.isRated;
+    final compactComment = _compactCommentPreview;
+    final actionBg = isRated
+        ? const Color(0xFF4A3529).withValues(alpha: 0.84)
+        : const Color(0xFF4A3529).withValues(alpha: 0.92);
+    final actionTextColor = const Color(0xFFF6E9DC);
+
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) {
@@ -932,7 +1333,7 @@ class _ModernMovieCardState extends State<_ModernMovieCard> {
                   left: 12,
                   right: 12,
                   child: Text(
-                    widget.movie.title.fr,
+                    widget.movie.title.display,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
@@ -947,73 +1348,114 @@ class _ModernMovieCardState extends State<_ModernMovieCard> {
                 // Bouton noter visible
                 if (widget.onRateTap != null)
                   Positioned(
-                    bottom: 48,
-                    right: 8,
+                    bottom: 52,
+                    right: 10,
                     child: GestureDetector(
-                      onTap: widget.onRateTap,
+                      onTap: _openEditor,
                       child: Container(
-                        width: 34,
-                        height: 34,
+                        padding: widget.movie.isRated
+                            ? const EdgeInsets.all(9)
+                            : const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 9,
+                              ),
                         decoration: BoxDecoration(
-                          color: AppTheme.accent,
-                          shape: BoxShape.circle,
+                          color: actionBg,
+                          borderRadius: BorderRadius.circular(14),
                           boxShadow: [
                             BoxShadow(
-                              color: AppTheme.accentDark.withValues(alpha: 0.5),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                              color: const Color(
+                                0xFF2D1E16,
+                              ).withValues(alpha: 0.28),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
-                        child: Icon(
-                          widget.movie.isRated
-                              ? Icons.edit_rounded
-                              : Icons.star_rounded,
-                          color: Colors.white,
-                          size: 16,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              widget.movie.isRated
+                                  ? Icons.edit_rounded
+                                  : Icons.edit_note_rounded,
+                              color: actionTextColor,
+                              size: widget.movie.isRated ? 16 : 17,
+                            ),
+                            if (!widget.movie.isRated) ...[
+                              const SizedBox(width: 5),
+                              Text(
+                                'Noter',
+                                style: TextStyle(
+                                  color: actionTextColor,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),
                   ),
 
-                // Badge note
+                // Badge note + debut commentaire
                 if (widget.showRating && widget.movie.isRated)
                   Positioned(
                     top: 10,
+                    left: 10,
                     right: 10,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A3529),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.star_rounded,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                widget.movie.userRating!.toStringAsFixed(0),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontFamily: 'RecoletaAlt',
-                                  fontSize: 13,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 182),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2F221A),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.star_rounded,
+                                  color: Color(0xFFFFD166),
+                                  size: 16,
                                 ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  widget.movie.userRating!.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'RecoletaAlt',
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (compactComment.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                compactComment,
+                                style: const TextStyle(
+                                  color: Color(0xFFF0E2D5),
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 10.5,
+                                  height: 1.15,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
-                          ),
+                          ],
                         ),
                       ),
                     ),
@@ -1096,6 +1538,155 @@ class _ActionButtonState extends State<_ActionButton> {
 }
 
 /// =============================================================================
+/// IA BUTTON - Bouton IA collection
+/// =============================================================================
+
+class _CollectionAiButton extends StatefulWidget {
+  final VoidCallback onTap;
+  final bool isLoading;
+
+  const _CollectionAiButton({required this.onTap, required this.isLoading});
+
+  @override
+  State<_CollectionAiButton> createState() => _CollectionAiButtonState();
+}
+
+class _CollectionAiButtonState extends State<_CollectionAiButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: AnimatedScale(
+        scale: _isPressed ? 0.92 : 1.0,
+        duration: AppTheme.durationFast,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: const Color(0xFF4A3529),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF2E2018).withValues(alpha: 0.24),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Center(
+            child: widget.isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// =============================================================================
+/// FILTER BUTTON - Bouton filtre collection
+/// =============================================================================
+
+class _CollectionFilterButton extends StatefulWidget {
+  final VoidCallback onTap;
+  final bool isActive;
+
+  const _CollectionFilterButton({required this.onTap, required this.isActive});
+
+  @override
+  State<_CollectionFilterButton> createState() =>
+      _CollectionFilterButtonState();
+}
+
+class _CollectionFilterButtonState extends State<_CollectionFilterButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: AnimatedScale(
+        scale: _isPressed ? 0.92 : 1.0,
+        duration: AppTheme.durationFast,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: widget.isActive
+                ? const Color(0xFFFFEAD1)
+                : const Color(0xFFF7ECDD),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: widget.isActive
+                  ? const Color(0xFFC48E55)
+                  : const Color(0xFFE1CCB3),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF5A4337).withValues(alpha: 0.16),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Center(
+                child: Icon(
+                  Icons.tune_rounded,
+                  color: Color(0xFF5A4337),
+                  size: 22,
+                ),
+              ),
+              if (widget.isActive)
+                Positioned(
+                  right: 9,
+                  top: 9,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFC48E55),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// =============================================================================
 /// SORT BUTTON - Bouton de tri moderne
 /// =============================================================================
 
@@ -1128,18 +1719,221 @@ class _SortButtonState extends State<_SortButton> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: const Color(0xFF4A3529),
+            color: const Color(0xFFF3E7D8),
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFD8C2AA)),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF4A3529).withValues(alpha: 0.28),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: const Color(0xFF5A4337).withValues(alpha: 0.18),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          child: const Icon(Icons.sort_rounded, color: Colors.white, size: 22),
+          child: const Icon(
+            Icons.sort_rounded,
+            color: Color(0xFF5A4337),
+            size: 22,
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// =============================================================================
+/// IA OPTION CHIP - Chip utilitaire pour modal IA
+/// =============================================================================
+
+class _AiOptionChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _AiOptionChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppTheme.durationFast,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF4A3529)
+              : AppTheme.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF4A3529)
+                : AppTheme.border.withValues(alpha: 0.7),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: isSelected ? Colors.white : AppTheme.textPrimary,
+            fontFamily: 'RecoletaAlt',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// =============================================================================
+/// FILTER MODAL - Modal filtres avancés
+/// =============================================================================
+
+class _CollectionFilterModal extends StatefulWidget {
+  final List<String> genres;
+  final List<String> years;
+  final String? currentGenre;
+  final String? currentYear;
+  final void Function(String? genre, String? year) onApply;
+
+  const _CollectionFilterModal({
+    required this.genres,
+    required this.years,
+    required this.currentGenre,
+    required this.currentYear,
+    required this.onApply,
+  });
+
+  @override
+  State<_CollectionFilterModal> createState() => _CollectionFilterModalState();
+}
+
+class _CollectionFilterModalState extends State<_CollectionFilterModal> {
+  String? _selectedGenre;
+  String? _selectedYear;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedGenre = widget.currentGenre;
+    _selectedYear = widget.currentYear;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        24,
+        24,
+        MediaQuery.of(context).padding.bottom + 24,
+      ),
+      decoration: const BoxDecoration(
+        color: AppTheme.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            AppI18n.t(
+              'collection.filter_title',
+              fallback: 'Filtrer la collection',
+            ),
+            style: AppTheme.titleLarge,
+          ),
+          const SizedBox(height: 18),
+          DropdownButtonFormField<String?>(
+            initialValue: _selectedGenre,
+            items: [
+              DropdownMenuItem<String?>(
+                value: null,
+                child: Text(
+                  AppI18n.t(
+                    'collection.filter_all_genres',
+                    fallback: 'Tous les genres',
+                  ),
+                ),
+              ),
+              ...widget.genres.map(
+                (genre) =>
+                    DropdownMenuItem<String?>(value: genre, child: Text(genre)),
+              ),
+            ],
+            onChanged: (value) => setState(() => _selectedGenre = value),
+            decoration: const InputDecoration(
+              labelText: "Genre",
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String?>(
+            initialValue: _selectedYear,
+            items: [
+              DropdownMenuItem<String?>(
+                value: null,
+                child: Text(
+                  AppI18n.t(
+                    'collection.filter_all_years',
+                    fallback: 'Toutes les annees',
+                  ),
+                ),
+              ),
+              ...widget.years.map(
+                (year) =>
+                    DropdownMenuItem<String?>(value: year, child: Text(year)),
+              ),
+            ],
+            onChanged: (value) => setState(() => _selectedYear = value),
+            decoration: const InputDecoration(
+              labelText: "Annee",
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedGenre = null;
+                      _selectedYear = null;
+                    });
+                  },
+                  child: Text(
+                    AppI18n.t('action.reset', fallback: 'Reinitialiser'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    widget.onApply(_selectedGenre, _selectedYear);
+                    Navigator.pop(context);
+                  },
+                  child: Text(AppI18n.t('action.apply', fallback: 'Appliquer')),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1188,7 +1982,10 @@ class _SortModal extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            Text("Trier par", style: AppTheme.titleLarge),
+            Text(
+              AppI18n.t('collection.sort_title', fallback: 'Trier par'),
+              style: AppTheme.titleLarge,
+            ),
             const SizedBox(height: 20),
             Flexible(
               child: SingleChildScrollView(

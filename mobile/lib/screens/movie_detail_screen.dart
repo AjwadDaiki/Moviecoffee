@@ -6,10 +6,11 @@ import '../api_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../theme/coffee_colors.dart';
+import '../services/app_preferences.dart';
 import 'chat_detail_screen.dart';
 
 /// =============================================================================
-/// MOVIE DETAIL SCREEN - Page dÃ©tail premium
+/// MOVIE DETAIL SCREEN - Page detail premium
 /// =============================================================================
 
 class MovieDetailScreen extends StatefulWidget {
@@ -33,21 +34,33 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
   MovieDetail? _movie;
   bool _isLoading = true;
   String? _error;
+  String _preferredLanguage = 'fr';
 
   @override
   void initState() {
     super.initState();
-    _loadMovieDetail();
+    _loadUserLanguageAndMovie();
   }
 
-  Future<void> _loadMovieDetail() async {
+  Future<void> _loadUserLanguageAndMovie() async {
+    try {
+      final lang = await AppPreferences.getPreferredLanguage();
+      _preferredLanguage = lang.trim().isEmpty ? 'fr' : lang.trim();
+    } catch (_) {}
+    await _loadMovieDetail(languageCode: _preferredLanguage);
+  }
+
+  Future<void> _loadMovieDetail({String? languageCode}) async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final result = await _apiService.getMovieDetail(widget.tmdbId);
+      final result = await _apiService.getMovieDetail(
+        widget.tmdbId,
+        languageCode: languageCode,
+      );
       if (result != null && mounted) {
         setState(() {
           _movie = result;
@@ -55,7 +68,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
         });
       } else {
         setState(() {
-          _error = 'Impossible de charger les dÃ©tails';
+          _error = 'Impossible de charger les détails';
           _isLoading = false;
         });
       }
@@ -150,7 +163,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(
-                      'RÃ©essayer',
+                      'Réessayer',
                       style: AppTheme.labelLarge.copyWith(color: Colors.white),
                     ),
                   ),
@@ -165,10 +178,14 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
   Widget _buildContent() {
     final m = _movie!;
-    final title = m.title.display.isNotEmpty
-        ? m.title.display
-        : (widget.title ?? '');
-    final overview = m.overview.display;
+    final localizedTitle = (m.localizedTitle ?? '').trim();
+    final localizedOverview = (m.localizedOverview ?? '').trim();
+    final title = localizedTitle.isNotEmpty
+        ? localizedTitle
+        : (m.title.display.isNotEmpty ? m.title.display : (widget.title ?? ''));
+    final overview = localizedOverview.isNotEmpty
+        ? localizedOverview
+        : m.overview.display;
     final backdrop = m.backdropPath ?? '';
     final poster = m.posterPath.isNotEmpty
         ? m.posterPath
@@ -226,6 +243,9 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                   ),
                 ],
 
+                const SizedBox(height: 18),
+                _buildShareCallout(title: title),
+
                 // --- SYNOPSIS ---
                 if (overview.isNotEmpty) ...[
                   const SizedBox(height: 28),
@@ -237,10 +257,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                   ),
                 ],
 
-                // --- RÃ‰ALISATEUR ---
+                // --- REALISATEUR ---
                 if (m.directors.isNotEmpty) ...[
                   const SizedBox(height: 28),
-                  Text('RÃ©alisation', style: AppTheme.titleMedium),
+                  Text('Réalisation', style: AppTheme.titleMedium),
                   const SizedBox(height: 12),
                   _buildDirectors(m.directors),
                 ],
@@ -288,7 +308,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 28),
-                  Text('OÃ¹ regarder', style: AppTheme.titleMedium),
+                  Text('Où regarder', style: AppTheme.titleMedium),
                   const SizedBox(height: 12),
                   _buildProviders(m.providers),
                 ],
@@ -490,11 +510,21 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               vertical: 10,
                             ),
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accentDark],
-                              ),
+                              color: const Color(0xFF2C7DA0),
                               borderRadius: BorderRadius.circular(14),
-                              boxShadow: AppTheme.shadowAccent(AppTheme.accent),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.2),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFF2C7DA0,
+                                  ).withValues(alpha: 0.35),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
+                                  spreadRadius: -2,
+                                ),
+                              ],
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -608,7 +638,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'Proposer ce film',
+                    'Envoyer à un ami',
                     style: GoogleFonts.dmSans(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -625,9 +655,23 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                 movieTitle,
                 style: GoogleFonts.dmSans(
                   fontSize: 14,
-                  color: CoffeeColors.moka,
+                  fontWeight: FontWeight.w700,
+                  color: CoffeeColors.espresso,
                 ),
                 maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                "Ajoutez ce film au brouillon d'un chat puis envoyez avec votre message.",
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  color: CoffeeColors.moka,
+                ),
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -757,7 +801,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Film ajoute au brouillon de chat avec $username'),
+        content: Text('Film ajouté au brouillon de chat avec $username'),
         backgroundColor: CoffeeColors.caramelBronze,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -928,7 +972,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
             _buildInfoItem(
               Icons.schedule_rounded,
               _formatRuntime(runtime),
-              'DurÃ©e',
+              'Durée',
             ),
           if (voteAvg > 0)
             _buildInfoItem(
@@ -962,6 +1006,74 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
         const SizedBox(height: 2),
         Text(label, style: AppTheme.caption.copyWith(fontSize: 11)),
       ],
+    );
+  }
+
+  Widget _buildShareCallout({required String title}) {
+    return GestureDetector(
+      onTap: () => _showShareDialog(title),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: CoffeeColors.caramelBronze.withValues(alpha: 0.28),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.textPrimary.withValues(alpha: 0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+              spreadRadius: -3,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C7DA0).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.send_rounded,
+                size: 22,
+                color: Color(0xFF2C7DA0),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Envoyer ce film à un ami',
+                    style: AppTheme.labelLarge.copyWith(fontSize: 14),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Proposez-le dans une conversation et regardez-le ensemble.',
+                    style: AppTheme.caption.copyWith(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 14,
+              color: CoffeeColors.moka,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

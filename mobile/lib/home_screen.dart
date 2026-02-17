@@ -84,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // 1. Image de fond
           CachedNetworkImage(
-            imageUrl: movie.posterUrl,
+            imageUrl: movie.posterPath,
             fit: BoxFit.cover,
             placeholder: (context, url) => Container(color: Colors.grey[900]),
             errorWidget: (context, url, error) => const Icon(Icons.error),
@@ -109,30 +109,44 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  movie.title,
+                  movie.title.display,
                   style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  movie.overview,
+                  movie.overview.display,
                   style: const TextStyle(fontSize: 14, color: Colors.white70),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 10),
-                // Logos des providers (Netflix, etc)
-                Row(
-                  children: movie.providers.map((url) => Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: CircleAvatar(
-                      backgroundImage: NetworkImage(url),
-                      radius: 12,
-                      backgroundColor: Colors.transparent,
-                    ),
-                  )).toList(),
-                )
+                if (movie.genres.isNotEmpty)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: movie.genres.take(3).map((genre) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          genre,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
               ],
             ),
           )

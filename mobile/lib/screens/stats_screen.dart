@@ -7,10 +7,10 @@ import '../widgets/stats/watch_time_gauge.dart';
 import '../widgets/stats/favorite_movie_card.dart';
 import '../widgets/stats/match_compatibility_card.dart';
 import '../widgets/stats/favorite_info_card.dart';
-import '../widgets/stats/share_buttons.dart';
 import '../api_service.dart';
 import '../models/models.dart';
 import '../services/collection_notifier.dart';
+import '../services/app_i18n.dart';
 import '../theme/coffee_colors.dart';
 import 'stats_story_screen.dart';
 import 'settings_screen.dart';
@@ -19,7 +19,7 @@ import 'settings_screen.dart';
 /// STATS SCREEN 2026 - Design Moderne Premium
 /// =============================================================================
 /// Style : iOS Design Award / Glassmorphism / Fluid Animations
-/// Features : MÃ©triques visuelles, Graphiques interactifs, Partage social
+/// Features : Metriques visuelles, Graphiques interactifs, Partage social
 /// =============================================================================
 
 class StatsScreen extends StatefulWidget {
@@ -40,7 +40,7 @@ class _StatsScreenState extends State<StatsScreen>
   // Animation
   late AnimationController _refreshController;
 
-  // DonnÃ©es des stats
+  // Donnees des stats
   AdvancedStats? _stats;
   String? _partnerName;
 
@@ -60,7 +60,7 @@ class _StatsScreenState extends State<StatsScreen>
     _loadStats();
     _loadFriends();
 
-    // Ã‰couter les changements de collection (depuis feed_screen)
+    // Ecouter les changements de collection (depuis feed_screen)
     collectionNotifier.addListener(_onCollectionChanged);
   }
 
@@ -236,7 +236,7 @@ class _StatsScreenState extends State<StatsScreen>
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 100),
         duration: const Duration(seconds: 4),
         action: SnackBarAction(
-          label: 'RÃ©essayer',
+          label: AppI18n.t('action.retry', fallback: 'Reessayer'),
           textColor: AppTheme.accent,
           onPressed: _loadStats,
         ),
@@ -250,16 +250,18 @@ class _StatsScreenState extends State<StatsScreen>
       bottom: false,
       child: Column(
         children: [
-          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           // HEADER SIMPLE - Titre + Refresh
-          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+          // HEADER SIMPLE - Titre + Refresh
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Text("Statistiques", style: AppTheme.headerOnCoffee),
+                  child: Text(
+                    AppI18n.t('stats.title', fallback: 'Statistiques'),
+                    style: AppTheme.headerOnCoffee,
+                  ),
                 ),
                 Row(
                   children: [
@@ -299,9 +301,8 @@ class _StatsScreenState extends State<StatsScreen>
             ),
           ),
 
-          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           // CONTENU
-          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+          // CONTENU
           Expanded(child: _isLoading ? _buildLoadingState() : _buildContent()),
         ],
       ),
@@ -351,6 +352,14 @@ class _StatsScreenState extends State<StatsScreen>
       return _buildEmptyState();
     }
 
+    final latestFavorite = s.lastFavoriteMovie ?? s.favoriteMovie;
+    final hasLatestFavorite =
+        latestFavorite != null && latestFavorite.userRating >= 4.0;
+    final hasFavoriteActor =
+        s.favoriteActor != null && s.favoriteActor!.isValid;
+    final hasFavoriteCountry =
+        s.favoriteCountry != null && s.favoriteCountry!.isValid;
+
     final genreDataList = s.genreDistribution
         .map(
           (g) => GenreData(
@@ -360,6 +369,16 @@ class _StatsScreenState extends State<StatsScreen>
           ),
         )
         .toList();
+    final computedCompletion = (s.totalSeen + s.totalLiked) > 0
+        ? (s.totalSeen / (s.totalSeen + s.totalLiked)) * 100.0
+        : 0.0;
+    final completionPercent = s.collectionCompletionPercent > 0
+        ? s.collectionCompletionPercent
+        : computedCompletion;
+
+    var sectionIndex = 0;
+    Widget section(Widget child) =>
+        _buildSectionEntry(index: sectionIndex++, child: child);
 
     return RefreshIndicator(
       onRefresh: _handleRefresh,
@@ -371,199 +390,224 @@ class _StatsScreenState extends State<StatsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 1 : Stats cette semaine (highlight)
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            _WeeklyHighlightCard(
-              weeklyFilms: s.weeklyFilms,
-              weeklyMinutes: s.weeklyMinutes,
-              monthlyFilms: s.monthlyFilms,
+            section(
+              _WeeklyHighlightCard(
+                weeklyFilms: s.weeklyFilms,
+                weeklyMinutes: s.weeklyMinutes,
+                monthlyFilms: s.monthlyFilms,
+              ),
             ),
-
             const SizedBox(height: 16),
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // PARTAGE STORY
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            Row(
-              children: [
-                Expanded(
-                  child: _StoryButton(
-                    label: 'Semaine',
-                    icon: Icons.calendar_today,
-                    buttonColor: const Color(0xFF2D8FD5),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              const StatsStoryScreen(period: 'week'),
-                        ),
-                      );
-                    },
+            section(
+              Row(
+                children: [
+                  Expanded(
+                    child: _StoryButton(
+                      label: AppI18n.t('stats.week', fallback: 'Semaine'),
+                      icon: Icons.calendar_today,
+                      buttonColor: const Color(0xFF2D8FD5),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const StatsStoryScreen(period: 'week'),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _StoryButton(
-                    label: 'All Time',
-                    icon: Icons.insights_rounded,
-                    buttonColor: const Color(0xFFE07A5F),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              const StatsStoryScreen(period: 'alltime'),
-                        ),
-                      );
-                    },
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _StoryButton(
+                      label: AppI18n.t('stats.all_time', fallback: 'All Time'),
+                      icon: Icons.insights_rounded,
+                      buttonColor: const Color(0xFFE07A5F),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const StatsStoryScreen(period: 'alltime'),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-
             const SizedBox(height: 20),
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 2 : MÃ©triques principales (rectangles)
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            Row(
-              children: [
-                Expanded(
-                  child: _RectMetricCard(
-                    icon: Icons.movie_rounded,
-                    value: "${s.totalSeen}",
-                    label: "Films vus",
-                    color: AppTheme.accent,
+            section(
+              Row(
+                children: [
+                  Expanded(
+                    child: _RectMetricCard(
+                      icon: Icons.movie_rounded,
+                      value: '${s.totalSeen}',
+                      label: AppI18n.t(
+                        'stats.films_seen',
+                        fallback: 'Films vus',
+                      ),
+                      color: AppTheme.accent,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _RectMetricCard(
-                    icon: Icons.bookmark_rounded,
-                    value: "${s.totalLiked}",
-                    label: "Watchlist",
-                    color: const Color(0xFFE57373),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _RectMetricCard(
+                      icon: Icons.bookmark_rounded,
+                      value: '${s.totalLiked}',
+                      label: AppI18n.t(
+                        'stats.watchlist',
+                        fallback: 'Watchlist',
+                      ),
+                      color: const Color(0xFFE57373),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _RectMetricCard(
-                    icon: Icons.star_rounded,
-                    value: s.averageRating.toStringAsFixed(1),
-                    label: "Note moyenne",
-                    color: const Color(0xFFFFC107),
+            section(
+              Row(
+                children: [
+                  Expanded(
+                    child: _RectMetricCard(
+                      icon: Icons.star_rounded,
+                      value: s.averageRating.toStringAsFixed(1),
+                      label: AppI18n.t(
+                        'stats.avg_rating',
+                        fallback: 'Note moyenne',
+                      ),
+                      color: const Color(0xFF8A5A44),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _RectMetricCard(
+                      icon: Icons.schedule_rounded,
+                      value: '${(s.totalMinutes / 60).toStringAsFixed(0)}h',
+                      label: AppI18n.t(
+                        'stats.total_time',
+                        fallback: 'Temps total',
+                      ),
+                      color: const Color(0xFF42A5F5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            if (hasFavoriteActor || hasFavoriteCountry)
+              section(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionTitle(
+                      title: AppI18n.t(
+                        'stats.favorites',
+                        fallback: 'Vos favoris',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (hasFavoriteActor) ...[
+                      FavoriteInfoCard(
+                        icon: Icons.person_rounded,
+                        title: AppI18n.t(
+                          'stats.favorite_actor',
+                          fallback: 'Acteur favori',
+                        ),
+                        value: s.favoriteActor!.name,
+                        count: s.favoriteActor!.count,
+                        iconColor: CoffeeColors.caramelBronze,
+                      ),
+                      if (hasFavoriteCountry) const SizedBox(height: 12),
+                    ],
+                    if (hasFavoriteCountry)
+                      FavoriteInfoCard(
+                        icon: Icons.public_rounded,
+                        title: "Pays d'origine favori",
+                        value: s.favoriteCountry!.name,
+                        count: s.favoriteCountry!.count,
+                        iconColor: CoffeeColors.terracotta,
+                      ),
+                  ],
+                ),
+              ),
+            if (hasFavoriteActor || hasFavoriteCountry)
+              const SizedBox(height: 24),
+            if (hasLatestFavorite)
+              section(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionTitle(
+                      title: AppI18n.t(
+                        'stats.last_favorite',
+                        fallback: 'Dernier coup de coeur',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FavoriteMovieCard(
+                      title: latestFavorite.title,
+                      posterUrl: latestFavorite.posterPath,
+                      rating: latestFavorite.userRating,
+                      runtime: latestFavorite.formattedRuntime,
+                      genres: latestFavorite.genres.isNotEmpty
+                          ? latestFavorite.genres
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            if (hasLatestFavorite) const SizedBox(height: 24),
+            if (genreDataList.isNotEmpty)
+              section(
+                GenreDonutChart(
+                  genres: genreDataList,
+                  title: AppI18n.t(
+                    'stats.favorite_genres',
+                    fallback: 'Vos genres favoris',
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _RectMetricCard(
-                    icon: Icons.schedule_rounded,
-                    value: "${(s.totalMinutes / 60).toStringAsFixed(0)}h",
-                    label: "Temps total",
-                    color: const Color(0xFF42A5F5),
-                  ),
+              ),
+            if (genreDataList.isNotEmpty) const SizedBox(height: 24),
+            section(
+              WatchTimeGauge(
+                totalMinutes: s.totalMinutes,
+                title: AppI18n.t(
+                  'stats.watch_time',
+                  fallback: 'Temps de visionnage',
                 ),
-              ],
+                maxMinutes: 10000,
+                completionPercent: completionPercent,
+              ),
             ),
-
             const SizedBox(height: 24),
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 2 : Film prÃ©fÃ©rÃ©
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            if (s.favoriteMovie != null) ...[
-              const _SectionTitle(title: "Votre coup de cÅ“ur"),
-              const SizedBox(height: 12),
-              FavoriteMovieCard(
-                title: s.favoriteMovie!.title,
-                posterUrl: s.favoriteMovie!.posterPath,
-                rating: s.favoriteMovie!.userRating,
-                runtime: s.favoriteMovie!.formattedRuntime,
-                genres: s.favoriteMovie!.genres.isNotEmpty
-                    ? s.favoriteMovie!.genres
-                    : null,
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 3 : Distribution des genres
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            if (genreDataList.isNotEmpty) ...[
-              GenreDonutChart(
-                genres: genreDataList,
-                title: "Vos genres favoris",
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 4 : Temps de visionnage
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            WatchTimeGauge(
-              totalMinutes: s.totalMinutes,
-              title: "Temps de visionnage",
-              maxMinutes: 10000,
-            ),
-
-            const SizedBox(height: 24),
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 5 : Tester la compatibilitÃ© avec...
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            _buildCompatibilitySection(),
-            const SizedBox(height: 24),
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 7 : Favoris (Acteur, Pays)
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            if (s.favoriteActor != null && s.favoriteActor!.isValid) ...[
-              const _SectionTitle(title: "Vos favoris"),
-              const SizedBox(height: 12),
-              FavoriteInfoCard(
-                icon: Icons.person_rounded,
-                title: "Acteur favori",
-                value: s.favoriteActor!.name,
-                count: s.favoriteActor!.count,
-                iconColor: CoffeeColors.caramelBronze,
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (s.favoriteCountry != null && s.favoriteCountry!.isValid) ...[
-              FavoriteInfoCard(
-                icon: Icons.public_rounded,
-                title: "Pays d'origine favori",
-                value: s.favoriteCountry!.name,
-                count: s.favoriteCountry!.count,
-                iconColor: CoffeeColors.terracotta,
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // SECTION 8 : Partage
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            ShareButtons(
-              topGenre: s.genreDistribution.isNotEmpty
-                  ? s.genreDistribution.first.genre
-                  : null,
-              totalMinutes: s.totalMinutes,
-              favoriteMovie: s.favoriteMovie?.title,
-              partnerName: _partnerName,
-              matchPercentage: s.matchPercentage,
-              coupleGenre: s.genreDistribution.isNotEmpty
-                  ? s.genreDistribution.first.genre
-                  : null,
-            ),
+            section(_buildCompatibilitySection()),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSectionEntry({required int index, required Widget child}) {
+    final capped = index > 8 ? 8 : index;
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('stats_entry_$index'),
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 260 + (capped * 70)),
+      curve: Curves.easeOutCubic,
+      child: child,
+      builder: (context, value, content) {
+        return Opacity(
+          opacity: value.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 20),
+            child: content,
+          ),
+        );
+      },
     );
   }
 
@@ -588,10 +632,13 @@ class _StatsScreenState extends State<StatsScreen>
               ),
             ),
             const SizedBox(height: 24),
-            Text("Aucune statistique", style: AppTheme.titleLarge),
+            Text(
+              AppI18n.t('stats.no_data', fallback: 'Aucune statistique'),
+              style: AppTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
-              "Commencez Ã  noter des films pour voir vos statistiques",
+              "Commencez a noter des films pour voir vos statistiques",
               style: AppTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
@@ -622,7 +669,13 @@ class _StatsScreenState extends State<StatsScreen>
               ),
             ),
             const SizedBox(height: 24),
-            Text("Erreur de chargement", style: AppTheme.titleLarge),
+            Text(
+              AppI18n.t(
+                'stats.error_loading',
+                fallback: 'Erreur de chargement',
+              ),
+              style: AppTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
               _errorMessage ?? "Une erreur est survenue",
@@ -631,7 +684,7 @@ class _StatsScreenState extends State<StatsScreen>
             ),
             const SizedBox(height: 32),
             _ActionButton(
-              label: "RÃ©essayer",
+              label: AppI18n.t('action.retry', fallback: 'Reessayer'),
               icon: Icons.refresh_rounded,
               onTap: _loadStats,
             ),
@@ -654,10 +707,15 @@ class _StatsScreenState extends State<StatsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionTitle(title: "Tester la compatibilite"),
+            _SectionTitle(
+              title: AppI18n.t(
+                'stats.test_compatibility',
+                fallback: 'Tester la compatibilite',
+              ),
+            ),
             const SizedBox(height: 8),
             Text(
-              "Ajoutez des amis pour generer une story de compatibilite.",
+              "Ajoutez des amis pour creer une story de compatibilite.",
               style: AppTheme.bodyMedium.copyWith(
                 color: AppTheme.textSecondary,
               ),
@@ -673,10 +731,38 @@ class _StatsScreenState extends State<StatsScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle(title: "Tester sa compatibilite avec..."),
+        Row(
+          children: [
+            Expanded(
+              child: _SectionTitle(
+                title: AppI18n.t(
+                  'stats.test_compatibility_with',
+                  fallback: 'Tester sa compatibilite avec...',
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: _showCompatibilityInfo,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: const Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 6),
         Text(
-          "Choisissez un ami puis generez une story de compatibilite.",
+          "Choisissez un ami et creez une story duo a partager.",
           style: AppTheme.bodyMedium.copyWith(color: AppTheme.textSecondary),
         ),
         const SizedBox(height: 12),
@@ -694,62 +780,128 @@ class _StatsScreenState extends State<StatsScreen>
           ),
         ),
         const SizedBox(height: 14),
-        if (_isLoadingCompatibility)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: CircularProgressIndicator(color: AppTheme.accent),
-            ),
-          )
-        else if (selectedUsername != null && data != null) ...[
-          MatchCompatibilityCard(
-            key: ValueKey('compatibility_$selectedUsername'),
-            matchPercentage: ((data['compatibility'] as num?) ?? 0).toDouble(),
-            partnerName: selectedUsername,
+        SizedBox(
+          height: 336,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOutCubic,
+            child: _buildCompatibilityBody(selectedUsername, data),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildCompatibilityMetaCard(
-                  label: "Films en commun",
-                  value: "${(data['common_movies_count'] as int?) ?? 0}",
-                  icon: Icons.movie_filter_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildCompatibilityMetaCard(
-                  label: "Matchs ensemble",
-                  value: "${(data['total_matches'] as int?) ?? 0}",
-                  icon: Icons.favorite_rounded,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _ActionButton(
-            label: "Generer la story compatibilite",
-            icon: Icons.auto_stories_rounded,
-            onTap: _openDuoStory,
-          ),
-        ] else
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: Text(
-              "Selectionnez un ami pour calculer votre compatibilite.",
-              style: AppTheme.bodyMedium.copyWith(
-                color: AppTheme.textSecondary,
-              ),
-            ),
-          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildCompatibilityBody(
+    String? selectedUsername,
+    Map<String, dynamic>? data,
+  ) {
+    if (_isLoadingCompatibility) {
+      return const Center(
+        key: ValueKey('compat_loading'),
+        child: CircularProgressIndicator(color: AppTheme.accent),
+      );
+    }
+
+    if (selectedUsername != null && data != null) {
+      return SingleChildScrollView(
+        key: ValueKey('compat_ready'),
+        physics: const NeverScrollableScrollPhysics(),
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                MatchCompatibilityCard(
+                  matchPercentage: ((data["compatibility"] as num?) ?? 0)
+                      .toDouble(),
+                  partnerName: selectedUsername,
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: GestureDetector(
+                    onTap: _openDuoStory,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A3529),
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF4A3529,
+                            ).withValues(alpha: 0.24),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.ios_share_rounded,
+                            color: Colors.white,
+                            size: 13,
+                          ),
+                          SizedBox(width: 5),
+                          Text(
+                            "Story Duo",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCompatibilityMetaCard(
+                    label: "Films en commun",
+                    value: "${(data["common_movies_count"] as int?) ?? 0}",
+                    icon: Icons.movie_filter_rounded,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCompatibilityMetaCard(
+                    label: "Matchs ensemble",
+                    value: "${(data["total_matches"] as int?) ?? 0}",
+                    icon: Icons.favorite_rounded,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      key: ValueKey('compat_empty'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Text(
+        "Selectionnez un ami pour calculer votre compatibilite.",
+        style: AppTheme.bodyMedium.copyWith(color: AppTheme.textSecondary),
+      ),
     );
   }
 
@@ -847,6 +999,16 @@ class _StatsScreenState extends State<StatsScreen>
   void _openDuoStory() {
     final selectedUsername = _compatibilityTarget;
     if (selectedUsername == null || selectedUsername.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppI18n.t(
+              'stats.select_friend_first',
+              fallback: "Selectionnez un ami d'abord.",
+            ),
+          ),
+        ),
+      );
       return;
     }
 
@@ -855,6 +1017,33 @@ class _StatsScreenState extends State<StatsScreen>
       MaterialPageRoute(
         builder: (context) =>
             StatsStoryScreen(period: 'duo', partnerName: selectedUsername),
+      ),
+    );
+  }
+
+  void _showCompatibilityInfo() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          "Comment le score est calcule",
+          style: TextStyle(
+            fontFamily: 'RecoletaAlt',
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: const Text(
+          "Le score est calcule en combinant: 1) proximite des notes sur les films en commun (penalite quadratique sur les ecarts), 2) similarite des genres preferes, 3) volume de films vus en commun, 4) nombre de matchs partages. Plus il y a de films compares, plus la compatibilite est fiable.",
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK"),
+          ),
+        ],
       ),
     );
   }
@@ -876,7 +1065,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 /// =============================================================================
-/// REFRESH BUTTON - Bouton refresh animÃ©
+/// REFRESH BUTTON - Bouton refresh anime
 /// =============================================================================
 
 class _RefreshButton extends StatelessWidget {
@@ -922,7 +1111,7 @@ class _RefreshButton extends StatelessWidget {
 }
 
 /// =============================================================================
-/// WEEKLY HIGHLIGHT CARD - Carte rÃ©sumÃ© de la semaine
+/// WEEKLY HIGHLIGHT CARD - Carte resume de la semaine
 /// =============================================================================
 
 class _WeeklyHighlightCard extends StatelessWidget {
@@ -1093,7 +1282,7 @@ class _WeeklyStatItem extends StatelessWidget {
 }
 
 /// =============================================================================
-/// RECT METRIC CARD - Carte de mÃ©trique rectangulaire
+/// RECT METRIC CARD - Carte de metrique rectangulaire
 /// =============================================================================
 
 class _RectMetricCard extends StatelessWidget {
@@ -1125,7 +1314,7 @@ class _RectMetricCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // IcÃ´ne
+              // Icone
               Container(
                 width: 48,
                 height: 48,

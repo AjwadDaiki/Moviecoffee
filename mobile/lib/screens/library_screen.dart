@@ -48,9 +48,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur: $e')));
       }
     }
   }
@@ -130,9 +130,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
 
           // Content
-          Expanded(
-            child: _buildContent(),
-          ),
+          Expanded(child: _buildContent()),
         ],
       ),
     );
@@ -164,10 +162,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final movie = _searchResults[index];
-        return _MovieCard(
-          movie: movie,
-          onTap: () => _openRatingModal(movie),
-        );
+        return _MovieCard(movie: movie, onTap: () => _openRatingModal(movie));
       },
     );
   }
@@ -204,10 +199,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: const TextStyle(
-                fontSize: 14,
-                color: CoffeeColors.moka,
-              ),
+              style: const TextStyle(fontSize: 14, color: CoffeeColors.moka),
               textAlign: TextAlign.center,
             ),
           ],
@@ -277,7 +269,7 @@ class _MovieCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    movie.title.fr,
+                    movie.title.display,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -405,8 +397,8 @@ class _QuickRateModalState extends State<_QuickRateModal> {
               _selectedAction == "SEEN"
                   ? 'Film noté avec succès !'
                   : _selectedAction == "LIKE"
-                      ? 'Ajouté à votre liste !'
-                      : 'Noté comme "Pas intéressé"',
+                  ? 'Ajouté à votre liste !'
+                  : 'Noté comme "Pas intéressé"',
             ),
           ),
         );
@@ -414,9 +406,9 @@ class _QuickRateModalState extends State<_QuickRateModal> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur: $e')));
       }
     }
   }
@@ -475,7 +467,7 @@ class _QuickRateModalState extends State<_QuickRateModal> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.movie.title.fr,
+                        widget.movie.title.display,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -639,8 +631,8 @@ class _QuickRateModalState extends State<_QuickRateModal> {
                         _selectedAction == "SEEN"
                             ? 'Noter ce film'
                             : _selectedAction == "LIKE"
-                                ? 'Ajouter à ma liste'
-                                : 'Marquer comme non intéressé',
+                            ? 'Ajouter à ma liste'
+                            : 'Marquer comme non intéressé',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -686,7 +678,7 @@ class _ActionChip extends StatelessWidget {
                 ? const LinearGradient(
                     colors: [
                       CoffeeColors.caramelBronze,
-                      CoffeeColors.terracotta
+                      CoffeeColors.terracotta,
                     ],
                   )
                 : null,

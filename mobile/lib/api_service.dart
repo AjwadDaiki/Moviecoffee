@@ -458,10 +458,14 @@ class ApiService {
         false;
   }
 
-  Future<List<Conversation>> getConversations() async {
+  Future<List<Conversation>> getConversations({
+    int page = 1,
+    int limit = 20,
+  }) async {
     return await _handleRequest(() async {
           final response = await _dio.get(
             '/social/chat/conversations',
+            queryParameters: {'page': page, 'limit': limit},
             options: await _getAuthOptions(),
           );
           final data = response.data as Map<String, dynamic>;
@@ -503,10 +507,16 @@ class ApiService {
   // ROUTE DÉTAIL FILM
   // ============================================================================
 
-  Future<MovieDetail?> getMovieDetail(int tmdbId) async {
+  Future<MovieDetail?> getMovieDetail(
+    int tmdbId, {
+    String? languageCode,
+  }) async {
     return await _handleRequest(() async {
       final response = await _dio.get(
         '/movie/$tmdbId',
+        queryParameters: languageCode != null && languageCode.trim().isNotEmpty
+            ? {'lang': languageCode.trim().toLowerCase()}
+            : null,
         options: await _getAuthOptions(),
       );
       return MovieDetail.fromJson(response.data as Map<String, dynamic>);
@@ -520,11 +530,19 @@ class ApiService {
   Future<Map<String, dynamic>?> updateProfile({
     String? bio,
     String? username,
+    String? preferredLanguage,
+    bool? askSeenRatingPrompt,
   }) async {
     return await _handleRequest(() async {
       final data = <String, dynamic>{};
       if (bio != null) data['bio'] = bio;
       if (username != null) data['username'] = username;
+      if (preferredLanguage != null) {
+        data['preferred_language'] = preferredLanguage;
+      }
+      if (askSeenRatingPrompt != null) {
+        data['ask_seen_rating_prompt'] = askSeenRatingPrompt;
+      }
       final response = await _dio.put(
         '/me/profile',
         data: data,
@@ -572,6 +590,132 @@ class ApiService {
           return true;
         }, errorMessage: "Impossible de supprimer le compte") ??
         false;
+  }
+
+  Future<Map<String, dynamic>?> requestEmailVerification() async {
+    return await _handleRequest(() async {
+      final response = await _dio.post(
+        '/auth/request-email-verification',
+        options: await _getAuthOptions(),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de lancer la verification email");
+  }
+
+  Future<Map<String, dynamic>?> verifyEmail(String token) async {
+    return await _handleRequest(() async {
+      final response = await _dio.post(
+        '/auth/verify-email',
+        data: {'token': token},
+        options: await _getAuthOptions(),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de verifier l'email");
+  }
+
+  // ============================================================================
+  // ROUTES INTEGRATIONS (LETTERBOXD + INGEST TMDB)
+  // ============================================================================
+
+  Future<Map<String, dynamic>?> getLetterboxdStatus() async {
+    return await _handleRequest(() async {
+      final response = await _dio.get(
+        '/integrations/letterboxd/status',
+        options: await _getAuthOptions(),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de charger le statut Letterboxd");
+  }
+
+  Future<Map<String, dynamic>?> connectLetterboxd(String username) async {
+    return await _handleRequest(() async {
+      final response = await _dio.post(
+        '/integrations/letterboxd/connect',
+        data: {"username": username},
+        options: await _getAuthOptions(),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de connecter Letterboxd");
+  }
+
+  Future<bool> disconnectLetterboxd() async {
+    return await _handleRequest(() async {
+          await _dio.delete(
+            '/integrations/letterboxd/connect',
+            options: await _getAuthOptions(),
+          );
+          return true;
+        }, errorMessage: "Impossible de deconnecter Letterboxd") ??
+        false;
+  }
+
+  Future<Map<String, dynamic>?> syncLetterboxd({
+    int maxItems = 1200,
+    bool includeWatchlist = true,
+    int watchlistMaxItems = 1200,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/integrations/letterboxd/sync',
+        data: {
+          "max_items": maxItems,
+          "include_watchlist": includeWatchlist,
+          "watchlist_max_items": watchlistMaxItems,
+        },
+        options: await _getAuthOptions(),
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      if (statusCode == 409) {
+        final raw = e.response?.data;
+        final detail = raw is Map ? raw['detail'] : null;
+        return {
+          "status": "already_running",
+          "detail": (detail ?? "Une synchronisation est deja en cours.")
+              .toString(),
+        };
+      }
+      final message = "Impossible de lancer la synchronisation Letterboxd";
+      _logError(message, e);
+      throw ApiException(message);
+    } catch (e) {
+      final message = "Impossible de lancer la synchronisation Letterboxd";
+      _logError(message, e);
+      throw ApiException(message);
+    }
+  }
+
+  Future<Map<String, dynamic>?> getTmdbIngestStatus({
+    required String adminToken,
+  }) async {
+    return await _handleRequest(() async {
+      final response = await _dio.get(
+        '/integrations/admin/tmdb/status',
+        options: Options(headers: {"x-admin-token": adminToken}),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de charger le statut d'ingestion TMDB");
+  }
+
+  Future<Map<String, dynamic>?> startTmdbIngest({
+    required String adminToken,
+    int targetTotal = 40000,
+    int startPage = 1,
+    int maxPages = 2000,
+  }) async {
+    return await _handleRequest(() async {
+      final response = await _dio.post(
+        '/integrations/admin/tmdb/start',
+        data: {
+          "target_total": targetTotal,
+          "start_page": startPage,
+          "max_pages": maxPages,
+        },
+        options: Options(headers: {"x-admin-token": adminToken}),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de lancer l'ingestion TMDB");
   }
 
   // ============================================================================
@@ -656,18 +800,24 @@ class ApiService {
     String? genre,
     int? year,
     String? decade,
+    int? runtimeMin,
     int? runtimeMax,
     String? country,
     double? minRating,
+    String mode = "personalized",
+    double exploratoryRatio = 0.22,
   }) async {
     return await _handleRequest(() async {
           final queryParams = <String, dynamic>{};
           if (genre != null && genre != "Tous") queryParams['genre'] = genre;
           if (year != null) queryParams['year'] = year;
           if (decade != null) queryParams['decade'] = decade;
+          if (runtimeMin != null) queryParams['runtime_min'] = runtimeMin;
           if (runtimeMax != null) queryParams['runtime_max'] = runtimeMax;
           if (country != null) queryParams['country'] = country;
           if (minRating != null) queryParams['min_rating'] = minRating;
+          queryParams['mode'] = mode;
+          queryParams['exploratory_ratio'] = exploratoryRatio;
 
           final response = await _dio.get(
             '/feed/advanced',
@@ -679,6 +829,26 @@ class ApiService {
               .toList();
         }, errorMessage: "Impossible de charger le feed") ??
         [];
+  }
+
+  Future<Map<String, dynamic>?> fetchSoloAiChoice({
+    String source = "wishlist",
+    String? mood,
+    int? runtimeMax,
+    String? era,
+  }) async {
+    return await _handleRequest(() async {
+      final query = <String, dynamic>{"source": source};
+      if (mood != null && mood.trim().isNotEmpty) query["mood"] = mood.trim();
+      if (runtimeMax != null) query["runtime_max"] = runtimeMax;
+      if (era != null && era.trim().isNotEmpty) query["era"] = era.trim();
+      final response = await _dio.get(
+        '/feed/solo-choice',
+        queryParameters: query,
+        options: await _getAuthOptions(),
+      );
+      return response.data as Map<String, dynamic>;
+    }, errorMessage: "Impossible de choisir un film avec l'IA");
   }
 
   // ============================================================================

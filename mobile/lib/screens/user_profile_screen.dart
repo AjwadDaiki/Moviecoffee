@@ -23,6 +23,7 @@ class UserProfileScreen extends StatefulWidget {
 class _UserProfileScreenState extends State<UserProfileScreen> {
   final _apiService = ApiService();
   PublicProfile? _profile;
+  int? _liveCompatibility;
   bool _isLoading = true;
   String _ratedSort = 'rating'; // 'rating' ou 'date'
 
@@ -42,14 +43,30 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           _profile = data;
           _isLoading = false;
         });
+        _loadLiveCompatibility();
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur: $e')));
       }
+    }
+  }
+
+  Future<void> _loadLiveCompatibility() async {
+    final profile = _profile;
+    if (profile == null || !profile.isFriend) return;
+
+    try {
+      final data = await _apiService.getCompatibilityWith(widget.username);
+      final raw = data?['compatibility'];
+      final score = raw is num ? raw.round() : int.tryParse('$raw');
+      if (!mounted || score == null) return;
+      setState(() => _liveCompatibility = score.clamp(0, 100));
+    } catch (_) {
+      // fallback silencieux sur score du profil public
     }
   }
 
@@ -57,10 +74,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatDetailScreen(
-          username: widget.username,
-          userBio: _profile?.bio,
-        ),
+        builder: (context) =>
+            ChatDetailScreen(username: widget.username, userBio: _profile?.bio),
       ),
     );
   }
@@ -68,10 +83,257 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   List<RatedMovie> get _sortedRatedMovies {
     final movies = List<RatedMovie>.from(_profile?.ratedMovies ?? []);
     if (_ratedSort == 'date') {
-      movies.sort((a, b) => b.date.compareTo(a.date));
+      movies.sort(
+        (a, b) => _parseRatedDate(b.date).compareTo(_parseRatedDate(a.date)),
+      );
     }
     // Default is already sorted by rating from backend
     return movies;
+  }
+
+  DateTime _parseRatedDate(String value) {
+    if (value.trim().isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+    return DateTime.tryParse(value)?.toLocal() ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  void _openRatedCommentDialog(RatedMovie movie) {
+    final comment = movie.comment.trim();
+    if (comment.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          movie.title,
+          style: const TextStyle(
+            fontFamily: 'RecoletaAlt',
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: CoffeeColors.espresso,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            comment,
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              color: CoffeeColors.espresso,
+              height: 1.4,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openAllRatedMoviesSheet(List<RatedMovie> movies) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * 0.82,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Tous les films notes',
+                        style: const TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: CoffeeColors.espresso,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: CoffeeColors.creamBorder),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(top: 10, bottom: 24),
+                    itemCount: movies.length,
+                    itemBuilder: (context, index) {
+                      final movie = movies[index];
+                      return _RatedMovieCard(
+                        movie: movie,
+                        onCommentTap: () => _openRatedCommentDialog(movie),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTopRatedTile(RatedMovie movie) {
+    return Container(
+      width: 110,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7EFE6),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: CoffeeColors.espresso.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+            spreadRadius: -3,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            movie.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: 'RecoletaAlt',
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: CoffeeColors.espresso,
+              height: 1.2,
+            ),
+          ),
+          const Spacer(),
+          Row(
+            children: List.generate(5, (i) {
+              final starValue = i + 1;
+              return Icon(
+                starValue <= movie.rating
+                    ? Icons.star_rounded
+                    : starValue - 0.5 <= movie.rating
+                    ? Icons.star_half_rounded
+                    : Icons.star_outline_rounded,
+                size: 14,
+                color: const Color(0xFFB7793D),
+              );
+            }),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${movie.rating.toStringAsFixed(1)}/5',
+            style: const TextStyle(
+              fontFamily: 'RecoletaAlt',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: CoffeeColors.moka,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentCommentTile(RatedMovie movie) {
+    final preview = movie.comment.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return GestureDetector(
+      onTap: () => _openRatedCommentDialog(movie),
+      child: Container(
+        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F1E8),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: CoffeeColors.espresso.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+              spreadRadius: -3,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    movie.title,
+                    style: const TextStyle(
+                      fontFamily: 'RecoletaAlt',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: CoffeeColors.espresso,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      size: 14,
+                      color: Color(0xFFB7793D),
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      movie.rating.toStringAsFixed(1),
+                      style: const TextStyle(
+                        fontFamily: 'RecoletaAlt',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: CoffeeColors.caramelBronze,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              preview,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: CoffeeColors.moka,
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Touchez pour lire',
+              style: GoogleFonts.dmSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: CoffeeColors.caramelBronze,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -79,7 +341,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: CoffeeColors.caramelBronze))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: CoffeeColors.caramelBronze,
+              ),
+            )
           : _buildContent(),
     );
   }
@@ -92,6 +358,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final stats = _profile!.stats;
     final commonMovies = _profile!.commonMovies;
     final ratedMovies = _sortedRatedMovies;
+    final compatibilityScore = (_liveCompatibility ?? _profile!.compatibility)
+        .clamp(0, 100);
+    final ratedMoviesByDate = List<RatedMovie>.from(_profile!.ratedMovies)
+      ..sort(
+        (a, b) => _parseRatedDate(b.date).compareTo(_parseRatedDate(a.date)),
+      );
+    final recentComments = ratedMoviesByDate
+        .where((movie) => movie.hasComment)
+        .take(4)
+        .toList();
+    final topRatedFive = List<RatedMovie>.from(_profile!.ratedMovies)
+      ..sort((a, b) {
+        final byRating = b.rating.compareTo(a.rating);
+        if (byRating != 0) return byRating;
+        return _parseRatedDate(b.date).compareTo(_parseRatedDate(a.date));
+      });
 
     return CustomScrollView(
       slivers: [
@@ -110,7 +392,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               boxShadow: AppTheme.shadowSmall,
             ),
             child: IconButton(
-              icon: const Icon(Icons.arrow_back_rounded, color: CoffeeColors.espresso, size: 20),
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                color: CoffeeColors.espresso,
+                size: 20,
+              ),
               onPressed: () => Navigator.pop(context),
             ),
           ),
@@ -134,8 +420,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                             shape: BoxShape.circle,
                             gradient: RadialGradient(
                               colors: [
-                                CoffeeColors.caramelBronze.withValues(alpha: 0.15),
-                                CoffeeColors.caramelBronze.withValues(alpha: 0.05),
+                                CoffeeColors.caramelBronze.withValues(
+                                  alpha: 0.15,
+                                ),
+                                CoffeeColors.caramelBronze.withValues(
+                                  alpha: 0.05,
+                                ),
                                 Colors.transparent,
                               ],
                               stops: const [0.0, 0.6, 1.0],
@@ -148,7 +438,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                           height: 88,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [CoffeeColors.caramelBronze, Color(0xFF8D6E63)],
+                              colors: [
+                                Color(0xFF6D4C3B),
+                                Color(0xFF4A3529),
+                              ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
@@ -159,7 +452,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: CoffeeColors.caramelBronze.withValues(alpha: 0.25),
+                                color: CoffeeColors.caramelBronze.withValues(
+                                  alpha: 0.25,
+                                ),
                                 blurRadius: 20,
                                 offset: const Offset(0, 6),
                                 spreadRadius: -2,
@@ -229,23 +524,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   children: [
                     _StatCard(
                       icon: Icons.movie_rounded,
-                      iconColor: const Color(0xFF8D6E63),
+                      iconColor: const Color(0xFF8A5F49),
                       value: stats.totalSeen.toString(),
                       label: 'Films vus',
                     ),
                     const SizedBox(width: 10),
                     _StatCard(
                       icon: Icons.star_rounded,
-                      iconColor: const Color(0xFFD4A056),
+                      iconColor: const Color(0xFFB7793D),
                       value: stats.averageRating.toStringAsFixed(1),
                       label: 'Note moyenne',
                     ),
                     const SizedBox(width: 10),
                     _StatCard(
-                      icon: Icons.emoji_events_rounded,
-                      iconColor: CoffeeColors.caramelBronze,
-                      value: 'Niv. ${stats.level}',
-                      label: 'Niveau',
+                      icon: Icons.handshake_rounded,
+                      iconColor: const Color(0xFF6A4A3C),
+                      value: commonMovies.length.toString(),
+                      label: 'En commun',
                     ),
                   ],
                 ),
@@ -253,15 +548,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               const SizedBox(height: 20),
 
               // Compatibility - with percentage ring and thicker bar
-              if (_profile!.isFriend && _profile!.compatibility > 0) ...[
+              if (_profile!.isFriend && compatibilityScore > 0) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
-                      color: AppTheme.surface,
+                      color: const Color(0xFFF7EFE6),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: AppTheme.shadowSmall,
+                      boxShadow: [
+                        BoxShadow(
+                          color: CoffeeColors.espresso.withValues(alpha: 0.07),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                          spreadRadius: -4,
+                        ),
+                      ],
                     ),
                     child: Row(
                       children: [
@@ -271,22 +573,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                           height: 56,
                           child: CustomPaint(
                             painter: _CompatibilityRingPainter(
-                              progress: _profile!.compatibility / 100,
+                              progress: compatibilityScore / 100,
                               backgroundColor: CoffeeColors.creamBorder,
-                              foregroundColor: CoffeeColors.caramelBronze,
+                              foregroundColor: const Color(0xFF8A5E49),
                               strokeWidth: 5,
                             ),
                             child: Center(
                               child: Text(
-                                '${_profile!.compatibility}%',
-                                style: const TextStyle(
-                                  fontFamily: 'RecoletaAlt',
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  color: CoffeeColors.caramelBronze,
+                                '$compatibilityScore%',
+                                  style: const TextStyle(
+                                    fontFamily: 'RecoletaAlt',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF8A5E49),
+                                  ),
                                 ),
                               ),
-                            ),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -307,10 +609,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
                                 child: LinearProgressIndicator(
-                                  value: _profile!.compatibility / 100,
+                                  value: compatibilityScore / 100,
                                   minHeight: 10,
                                   backgroundColor: CoffeeColors.creamBorder,
-                                  valueColor: const AlwaysStoppedAnimation(CoffeeColors.caramelBronze),
+                                  valueColor: const AlwaysStoppedAnimation(
+                                    Color(0xFF8A5E49),
+                                  ),
                                 ),
                               ),
                             ],
@@ -321,6 +625,55 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
+              ],
+
+              // Action principale: disponible haut dans l'ecran
+              if (_profile!.isFriend) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: GestureDetector(
+                    onTap: _openChat,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A3529),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF4A3529,
+                            ).withValues(alpha: 0.28),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                            spreadRadius: -2,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Envoyer un message',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
               ],
 
               // Top Genres
@@ -334,7 +687,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     runSpacing: 8,
                     children: stats.topGenres.take(5).map((genre) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: AppTheme.surface,
                           borderRadius: BorderRadius.circular(24),
@@ -355,6 +711,30 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 const SizedBox(height: 24),
               ],
 
+              if (topRatedFive.isNotEmpty) ...[
+                _buildSectionTitle('Top 5 mieux notes'),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 130,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: topRatedFive
+                        .take(5)
+                        .map(_buildTopRatedTile)
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              if (recentComments.isNotEmpty) ...[
+                _buildSectionTitle('Derniers commentaires'),
+                const SizedBox(height: 10),
+                ...recentComments.map(_buildRecentCommentTile),
+                const SizedBox(height: 14),
+              ],
+
               // Films notes
               if (ratedMovies.isNotEmpty) ...[
                 Padding(
@@ -372,7 +752,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: CoffeeColors.caramelBronze,
                           borderRadius: BorderRadius.circular(12),
@@ -386,16 +769,48 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                           ),
                         ),
                       ),
+                      if (ratedMovies.length > 10) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _openAllRatedMoviesSheet(ratedMovies),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: CoffeeColors.creamBorder,
+                              ),
+                            ),
+                            child: const Text(
+                              'Tout voir',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: CoffeeColors.caramelBronze,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                       const Spacer(),
                       // Sort toggle
                       GestureDetector(
                         onTap: () {
                           setState(() {
-                            _ratedSort = _ratedSort == 'rating' ? 'date' : 'rating';
+                            _ratedSort = _ratedSort == 'rating'
+                                ? 'date'
+                                : 'rating';
                           });
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: AppTheme.surface,
                             borderRadius: BorderRadius.circular(14),
@@ -405,13 +820,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                _ratedSort == 'rating' ? Icons.star_rounded : Icons.schedule_rounded,
+                                _ratedSort == 'rating'
+                                    ? Icons.star_rounded
+                                    : Icons.schedule_rounded,
                                 size: 14,
                                 color: CoffeeColors.caramelBronze,
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                _ratedSort == 'rating' ? 'Par note' : 'Par date',
+                                _ratedSort == 'rating'
+                                    ? 'Par note'
+                                    : 'Par date',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -426,17 +845,36 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ...ratedMovies.take(10).map((movie) => _RatedMovieCard(movie: movie)),
+                ...ratedMovies
+                    .take(10)
+                    .map(
+                      (movie) => _RatedMovieCard(
+                        movie: movie,
+                        onCommentTap: () => _openRatedCommentDialog(movie),
+                      ),
+                    ),
                 if (ratedMovies.length > 10) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Center(
-                      child: Text(
-                        '+${ratedMovies.length - 10} autres films',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: CoffeeColors.moka,
-                          fontWeight: FontWeight.w500,
+                    child: GestureDetector(
+                      onTap: () => _openAllRatedMoviesSheet(ratedMovies),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: CoffeeColors.creamBorder),
+                        ),
+                        child: Text(
+                          'Voir les ${ratedMovies.length} films notes',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: CoffeeColors.caramelBronze,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
@@ -462,7 +900,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: CoffeeColors.caramelBronze,
                           borderRadius: BorderRadius.circular(12),
@@ -510,7 +951,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                                   color: AppTheme.surface,
                                   borderRadius: BorderRadius.circular(14),
                                 ),
-                                child: const Icon(Icons.movie_rounded, color: CoffeeColors.moka),
+                                child: const Icon(
+                                  Icons.movie_rounded,
+                                  color: CoffeeColors.moka,
+                                ),
                               );
                             },
                           ),
@@ -522,49 +966,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 const SizedBox(height: 24),
               ],
 
-              // Action Button - full-width gradient Message button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: GestureDetector(
-                  onTap: _openChat,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [CoffeeColors.caramelBronze, Color(0xFF8D6E63)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: CoffeeColors.caramelBronze.withValues(alpha: 0.35),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                          spreadRadius: -2,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 20),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Envoyer un message',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
               const SizedBox(height: 40),
             ],
           ),
@@ -646,8 +1047,9 @@ class _CompatibilityRingPainter extends CustomPainter {
 
 class _RatedMovieCard extends StatelessWidget {
   final RatedMovie movie;
+  final VoidCallback? onCommentTap;
 
-  const _RatedMovieCard({required this.movie});
+  const _RatedMovieCard({required this.movie, this.onCommentTap});
 
   @override
   Widget build(BuildContext context) {
@@ -682,7 +1084,8 @@ class _RatedMovieCard extends StatelessWidget {
                       width: 55,
                       height: 80,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => _posterPlaceholder(),
+                      errorBuilder: (context, error, stackTrace) =>
+                          _posterPlaceholder(),
                     )
                   : _posterPlaceholder(),
             ),
@@ -707,38 +1110,100 @@ class _RatedMovieCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 // Stars with warm gold color
-                Row(
-                  children: List.generate(5, (i) {
-                    final starValue = i + 1;
-                    return Icon(
-                      starValue <= movie.rating
-                          ? Icons.star_rounded
-                          : starValue - 0.5 <= movie.rating
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5ECE2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...List.generate(5, (i) {
+                        final starValue = i + 1;
+                        return Icon(
+                          starValue <= movie.rating
+                              ? Icons.star_rounded
+                              : starValue - 0.5 <= movie.rating
                               ? Icons.star_half_rounded
                               : Icons.star_outline_rounded,
-                      size: 18,
-                      color: const Color(0xFFD4A056),
-                    );
-                  }),
+                          size: 18,
+                          color: const Color(0xFFB7793D),
+                        );
+                      }),
+                      const SizedBox(width: 6),
+                      Text(
+                        movie.rating.toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: CoffeeColors.espresso,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 if (movie.hasComment) ...[
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.background,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      movie.comment,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                        color: CoffeeColors.moka,
-                        height: 1.3,
+                  GestureDetector(
+                    onTap: onCommentTap,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9F2EA),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.chat_bubble_rounded,
+                                size: 13,
+                                color: CoffeeColors.caramelBronze,
+                              ),
+                              const SizedBox(width: 5),
+                              const Text(
+                                'Commentaire',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: CoffeeColors.caramelBronze,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            movie.comment.trim().replaceAll(
+                              RegExp(r'\s+'),
+                              ' ',
+                            ),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                              color: CoffeeColors.moka,
+                              height: 1.3,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Voir le commentaire complet',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: CoffeeColors.caramelBronze,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -758,7 +1223,11 @@ class _RatedMovieCard extends StatelessWidget {
         color: AppTheme.background,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Icon(Icons.movie_rounded, color: CoffeeColors.moka, size: 24),
+      child: const Icon(
+        Icons.movie_rounded,
+        color: CoffeeColors.moka,
+        size: 24,
+      ),
     );
   }
 }
@@ -786,9 +1255,16 @@ class _StatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
         decoration: BoxDecoration(
-          color: AppTheme.surface,
+          color: iconColor.withValues(alpha: 0.09),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: AppTheme.shadowSmall,
+          boxShadow: [
+            BoxShadow(
+              color: CoffeeColors.espresso.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+              spreadRadius: -3,
+            ),
+          ],
         ),
         child: Column(
           children: [

@@ -29,29 +29,34 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     OnboardingPage(
       icon: Icons.coffee_rounded,
       title: 'MoovieCoffee',
-      subtitle: 'Découvrez des films.\nPartagez vos coups de coeur.',
+      subtitle: 'Decouvrez des films.\nPartagez vos coups de coeur.',
+      highlights: ['Films', 'Partage', 'Matchs'],
       useSvgLogo: true,
       useHolyCreamTitle: true,
     ),
     OnboardingPage(
       icon: Icons.swipe_rounded,
-      title: 'Swipez pour découvrir',
-      subtitle: 'Swipez à droite pour aimer\nSwipez à gauche pour passer',
+      title: 'Swipez pour decouvrir',
+      subtitle: 'Droite pour aimer\nGauche pour passer',
+      highlights: ['Rapide', 'Simple'],
     ),
     OnboardingPage(
       icon: Icons.star_rounded,
       title: 'Notez vos films vus',
-      subtitle: 'Swipez vers le haut pour\nnoter un film déjà vu',
+      subtitle: 'Swipez vers le haut pour\nnoter un film deja vu',
+      highlights: ['Notes', 'Commentaires'],
     ),
     OnboardingPage(
       icon: Icons.favorite_rounded,
       title: 'Matchs avec vos amis',
-      subtitle: 'Quand vous et un ami aimez\nle même film = Match!',
+      subtitle: 'Quand vous et un ami aimez\nle meme film = Match !',
+      highlights: ['Duo', 'Compatibilite'],
     ),
     OnboardingPage(
       icon: Icons.rocket_launch_rounded,
-      title: 'Prêt à commencer ?',
-      subtitle: 'Explorez, notez, partagez\net devenez un cinéphile!',
+      title: 'Pret a commencer ?',
+      subtitle: 'Explorez, notez, partagez\net devenez cinephile !',
+      highlights: ['Collection', 'Communaute', 'Stats'],
       isLast: true,
     ),
   ];
@@ -68,9 +73,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       duration: const Duration(milliseconds: 800),
     );
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
     _scaleAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
     );
@@ -111,7 +117,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         child: SafeArea(
           child: Column(
             children: [
-              // Skip button
               Align(
                 alignment: Alignment.topRight,
                 child: Padding(
@@ -129,8 +134,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   ),
                 ),
               ),
-
-              // Pages
               Expanded(
                 child: PageView.builder(
                   controller: _pageController,
@@ -147,13 +150,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   },
                 ),
               ),
-
-              // Bottom section
               Padding(
                 padding: const EdgeInsets.all(32),
                 child: Column(
                   children: [
-                    // Page indicators
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(
@@ -162,8 +162,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       ),
                     ),
                     const SizedBox(height: 32),
-
-                    // Next/Start button
                     _buildButton(),
                   ],
                 ),
@@ -185,7 +183,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Icon container with glass effect
               Container(
                 width: 140,
                 height: 140,
@@ -200,13 +197,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 child: page.useSvgLogo
                     ? Padding(
                         padding: const EdgeInsets.all(20),
-                        child: SvgPicture.asset(
-                          'assets/logoB.svg',
-                          colorFilter: const ColorFilter.mode(
-                            CoffeeColors.espresso,
-                            BlendMode.srcIn,
-                          ),
-                        ),
+                        child: SvgPicture.asset('assets/logoB.svg'),
                       )
                     : Icon(
                         page.icon,
@@ -215,8 +206,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       ),
               ),
               const SizedBox(height: 48),
-
-              // Title
               Text(
                 page.title,
                 textAlign: TextAlign.center,
@@ -235,8 +224,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       ),
               ),
               const SizedBox(height: 16),
-
-              // Subtitle
               Text(
                 page.subtitle,
                 textAlign: TextAlign.center,
@@ -247,6 +234,42 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   height: 1.5,
                 ),
               ),
+              if (page.highlights.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: page.highlights.map((item) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: CoffeeColors.caramelBronze.withValues(
+                          alpha: 0.14,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: CoffeeColors.caramelBronze.withValues(
+                            alpha: 0.24,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        item,
+                        style: const TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: CoffeeColors.espresso,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
             ],
           ),
         ),
@@ -316,6 +339,7 @@ class OnboardingPage {
   final IconData icon;
   final String title;
   final String subtitle;
+  final List<String> highlights;
   final bool isLast;
   final bool useSvgLogo;
   final bool useHolyCreamTitle;
@@ -324,6 +348,7 @@ class OnboardingPage {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.highlights = const [],
     this.isLast = false,
     this.useSvgLogo = false,
     this.useHolyCreamTitle = false,

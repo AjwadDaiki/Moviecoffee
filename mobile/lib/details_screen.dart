@@ -18,9 +18,7 @@ class DetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String headerImage = movie.backdropPath.isNotEmpty 
-        ? movie.backdropPath 
-        : movie.posterPath;
+    final String headerImage = movie.posterPath;
 
     return Scaffold(
       backgroundColor: AppColors.bgLight,

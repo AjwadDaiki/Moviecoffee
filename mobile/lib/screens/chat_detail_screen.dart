@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import '../api_service.dart';
 import '../models/models.dart';
@@ -33,7 +34,8 @@ class ChatDetailScreen extends StatefulWidget {
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
 
-class _ChatDetailScreenState extends State<ChatDetailScreen> {
+class _ChatDetailScreenState extends State<ChatDetailScreen>
+    with WidgetsBindingObserver {
   final _apiService = ApiService();
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
@@ -44,13 +46,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   int _currentPage = 1;
   bool _hasMore = true;
   static const _pageSize = 50;
+  bool _didInitialScroll = false;
+  bool _appIsActive = true;
   int? _draftMovieId;
   String? _draftMovieTitle;
   String? _draftMoviePoster;
 
   // Auto-refresh timer
   late final Stream<int> _refreshTimer = Stream<int>.periodic(
-    const Duration(seconds: 5),
+    const Duration(seconds: 10),
     (tick) => tick,
   );
   late final StreamSubscription<int> _refreshSubscription;
@@ -59,22 +63,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _draftMovieId = widget.matchMovieId;
     _draftMovieTitle = widget.matchMovieTitle;
     _draftMoviePoster = widget.matchMoviePoster;
     _loadMessages();
     _scrollController.addListener(_onScroll);
 
-    // Auto-refresh toutes les 5 secondes
+    // Auto-refresh toutes les 8 secondes
     _refreshSubscription = _refreshTimer.listen((_) {
-      if (mounted && !_isRefreshing && !_isSending) {
+      final routeIsCurrent = mounted
+          ? (ModalRoute.of(context)?.isCurrent ?? true)
+          : false;
+      if (mounted &&
+          routeIsCurrent &&
+          _appIsActive &&
+          _messageController.text.trim().isEmpty &&
+          !_isRefreshing &&
+          !_isSending) {
         _refreshMessages();
       }
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsActive = state == AppLifecycleState.resumed;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshSubscription.cancel();
     _messageController.dispose();
     _scrollController.dispose();
@@ -100,8 +119,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _messages = merged;
         });
 
-        // Auto-scroll si prÃ¨s du bas
-        if (_scrollController.hasClients) {
+        // Auto-scroll si proche du bas
+        if (_didInitialScroll && _scrollController.hasClients) {
           final position = _scrollController.position;
           if (position.maxScrollExtent - position.pixels < 100) {
             Future.delayed(const Duration(milliseconds: 100), () {
@@ -114,6 +133,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               }
             });
           }
+        } else {
+          _scrollToBottom(animated: false);
+          _didInitialScroll = true;
         }
       }
     } catch (_) {
@@ -147,6 +169,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _currentPage = 1;
           _isLoading = false;
         });
+        _scrollToBottom(animated: false);
+        _didInitialScroll = true;
       }
     } catch (e) {
       if (mounted) {
@@ -163,6 +187,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         );
       }
     }
+  }
+
+  void _scrollToBottom({bool animated = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (!animated) {
+        _scrollController.jumpTo(target);
+        return;
+      }
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   Future<void> _loadMoreMessages() async {
@@ -303,7 +343,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       );
 
       if (success && mounted) {
-        // Ajouter le message localement pour feedback instantanÃ©
+        // Ajouter le message localement pour feedback instantané
         setState(() {
           _messages.add(
             ChatMessage.local(
@@ -321,16 +361,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           _isSending = false;
         });
 
-        // Scroll vers le bas
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (_scrollController.hasClients) {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          }
-        });
+        _scrollToBottom();
       } else {
         setState(() => _isSending = false);
       }
@@ -351,7 +382,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  // Couleur avatar basÃ©e sur le username
+  // Couleur avatar basée sur le username
   void _attachMovieToDraft({
     required int movieId,
     required String movieTitle,
@@ -455,7 +486,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final hasBio = widget.userBio?.trim().isNotEmpty == true;
+
     return AppBar(
+      toolbarHeight: 66,
       backgroundColor: AppTheme.surface,
       elevation: 0,
       scrolledUnderElevation: 0.5,
@@ -468,7 +502,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ),
         onPressed: () => Navigator.pop(context),
       ),
-      titleSpacing: 0,
+      centerTitle: false,
+      titleSpacing: 2,
       title: GestureDetector(
         onTap: () {
           Navigator.push(
@@ -479,64 +514,75 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           );
         },
-        child: Row(
-          children: [
-            // Avatar dans l'appbar
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: _avatarGradient[0],
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: _avatarGradient[0].withValues(alpha: 0.3),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  widget.username.isNotEmpty
-                      ? widget.username[0].toUpperCase()
-                      : 'U',
-                  style: GoogleFonts.dmSans(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
+        child: SizedBox(
+          height: 42,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Avatar dans l'appbar
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _avatarGradient[0],
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _avatarGradient[0].withValues(alpha: 0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    widget.username.isNotEmpty
+                        ? widget.username[0].toUpperCase()
+                        : 'U',
+                    style: GoogleFonts.dmSans(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.username,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  if (widget.userBio != null)
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      widget.userBio!,
+                      widget.username,
                       style: GoogleFonts.dmSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                        height: 1.0,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                ],
+                    if (hasBio)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          widget.userBio!,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textSecondary,
+                            height: 1.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       actions: [
@@ -599,12 +645,35 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Envoyez un message a ${widget.username}',
+              'Envoyez un message à ${widget.username}',
               style: const TextStyle(
                 fontFamily: 'RecoletaAlt',
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            GestureDetector(
+              onTap: _loadMessages,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A3529),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Actualiser les messages',
+                  style: TextStyle(
+                    fontFamily: 'RecoletaAlt',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
           ],
@@ -637,12 +706,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         final messageIndex = _isLoading && _hasMore ? index - 1 : index;
         final message = _messages[messageIndex];
 
-        // DÃ©terminer si le message est envoyÃ© par moi
+        // Déterminer si le message est envoyé par moi
         final isSentByMe =
             message.senderUsername.toLowerCase() !=
             widget.username.toLowerCase();
 
-        // VÃ©rifier si on doit afficher le sÃ©parateur de date
+        // Vérifier si on doit afficher le séparateur de date
         bool showDateSeparator = false;
         if (messageIndex == 0) {
           showDateSeparator = true;
@@ -654,32 +723,46 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               prevMessage.createdAt.year != message.createdAt.year;
         }
 
-        // VÃ©rifier si on affiche l'avatar (premier msg ou changement de sender)
+        // Vérifier si on affiche l'avatar (premier msg ou changement de sender)
         bool showAvatar = !isSentByMe;
         if (!isSentByMe && messageIndex > 0) {
           final prevMessage = _messages[messageIndex - 1];
           final prevIsSentByMe =
               prevMessage.senderUsername.toLowerCase() !=
               widget.username.toLowerCase();
-          if (!prevIsSentByMe) showAvatar = false; // Suite du mÃªme sender
+          if (!prevIsSentByMe) showAvatar = false; // Suite du même sender
         }
         if (messageIndex == 0 && !isSentByMe) showAvatar = true;
 
-        return Column(
-          children: [
-            if (showDateSeparator) _buildDateSeparator(message.createdAt),
-            _MessageBubble(
-              content: message.content,
-              isSentByMe: isSentByMe,
-              timestamp: message.createdAt,
-              movieId: message.movieId,
-              movieTitle: message.movieTitle,
-              moviePoster: message.moviePoster,
-              otherUsername: widget.username,
-              showAvatar: showAvatar,
-              avatarGradient: _avatarGradient,
-            ),
-          ],
+        return TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          tween: Tween(begin: 0.94, end: 1.0),
+          child: Column(
+            children: [
+              if (showDateSeparator) _buildDateSeparator(message.createdAt),
+              _MessageBubble(
+                content: message.content,
+                isSentByMe: isSentByMe,
+                timestamp: message.createdAt,
+                movieId: message.movieId,
+                movieTitle: message.movieTitle,
+                moviePoster: message.moviePoster,
+                otherUsername: widget.username,
+                showAvatar: showAvatar,
+                avatarGradient: _avatarGradient,
+              ),
+            ],
+          ),
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: value.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, (1 - value) * 14),
+                child: child,
+              ),
+            );
+          },
         );
       },
     );
@@ -748,8 +831,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       return;
     }
 
-    final title = selectedMovie.title.fr.isNotEmpty
-        ? selectedMovie.title.fr
+    final title = selectedMovie.title.display.isNotEmpty
+        ? selectedMovie.title.display
         : 'Film';
     _attachMovieToDraft(
       movieId: selectedMovie.tmdbId,
@@ -927,12 +1010,28 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: moviePoster != null && moviePoster.isNotEmpty
-                  ? Image.network(
-                      moviePoster,
+                  ? CachedNetworkImage(
+                      imageUrl: moviePoster,
                       width: 44,
                       height: 60,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      fadeInDuration: const Duration(milliseconds: 120),
+                      placeholder: (_, __) => Container(
+                        width: 44,
+                        height: 60,
+                        color: CoffeeColors.latteCream,
+                        child: const Center(
+                          child: SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.6,
+                              color: CoffeeColors.moka,
+                            ),
+                          ),
+                        ),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
                         width: 44,
                         height: 60,
                         color: CoffeeColors.latteCream,
@@ -1182,12 +1281,33 @@ class _MessageBubble extends StatelessWidget {
                             children: [
                               if (moviePoster != null &&
                                   moviePoster!.isNotEmpty)
-                                Image.network(
-                                  moviePoster!,
+                                CachedNetworkImage(
+                                  imageUrl: moviePoster!,
                                   width: double.infinity,
                                   height: 120,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  fadeInDuration: const Duration(
+                                    milliseconds: 120,
+                                  ),
+                                  placeholder: (_, __) => Container(
+                                    height: 120,
+                                    color: isSentByMe
+                                        ? Colors.white12
+                                        : CoffeeColors.steamMilk,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.8,
+                                          color: isSentByMe
+                                              ? Colors.white70
+                                              : CoffeeColors.moka,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  errorWidget: (_, __, ___) => Container(
                                     height: 80,
                                     color: isSentByMe
                                         ? Colors.white12

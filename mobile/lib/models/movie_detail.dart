@@ -48,18 +48,15 @@ class Trailer {
   final String name;
   final String url;
 
-  const Trailer({
-    required this.key,
-    this.name = '',
-    this.url = '',
-  });
+  const Trailer({required this.key, this.name = '', this.url = ''});
 
   factory Trailer.fromJson(Map<String, dynamic> json) {
     final key = json['key'] as String? ?? '';
     return Trailer(
       key: key,
       name: json['name'] as String? ?? '',
-      url: json['url'] as String? ??
+      url:
+          json['url'] as String? ??
           (key.isNotEmpty ? 'https://www.youtube.com/watch?v=$key' : ''),
     );
   }
@@ -138,8 +135,8 @@ class SimilarMovie {
     final poster = rawPoster.startsWith('http')
         ? rawPoster
         : rawPoster.isNotEmpty
-            ? 'https://image.tmdb.org/t/p/w500$rawPoster'
-            : '';
+        ? 'https://image.tmdb.org/t/p/w500$rawPoster'
+        : '';
 
     return SimilarMovie(
       tmdbId: json['tmdb_id'] as int? ?? json['id'] as int? ?? 0,
@@ -150,8 +147,7 @@ class SimilarMovie {
     );
   }
 
-  String get year =>
-      releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
+  String get year => releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
 
   bool get hasPoster => posterPath.isNotEmpty;
 }
@@ -164,6 +160,9 @@ class MovieDetail extends Movie {
   final int? revenue;
   final String? status;
   final String? originalLanguage;
+  final String? selectedLanguage;
+  final String? localizedTitle;
+  final String? localizedOverview;
   final Trailer? trailer;
   final List<CastMember> cast;
   final List<Director> directors;
@@ -194,6 +193,9 @@ class MovieDetail extends Movie {
     this.revenue,
     this.status,
     this.originalLanguage,
+    this.selectedLanguage,
+    this.localizedTitle,
+    this.localizedOverview,
     this.trailer,
     this.cast = const [],
     this.directors = const [],
@@ -209,8 +211,8 @@ class MovieDetail extends Movie {
     final posterPath = rawPoster.startsWith('http')
         ? rawPoster
         : rawPoster.isNotEmpty
-            ? 'https://image.tmdb.org/t/p/w500$rawPoster'
-            : '';
+        ? 'https://image.tmdb.org/t/p/w500$rawPoster'
+        : '';
 
     final castList = (json['cast'] as List<dynamic>? ?? [])
         .map((c) => CastMember.fromJson(c as Map<String, dynamic>))
@@ -247,11 +249,15 @@ class MovieDetail extends Movie {
       revenue: json['revenue'] as int?,
       status: json['status'] as String?,
       originalLanguage: json['original_language'] as String?,
+      selectedLanguage: json['selected_language'] as String?,
+      localizedTitle: json['localized_title'] as String?,
+      localizedOverview: json['localized_overview'] as String?,
       trailer: trailerJson != null ? Trailer.fromJson(trailerJson) : null,
       cast: castList,
       directors: directorsList,
       providers: ProvidersData.fromJson(
-          json['providers'] as Map<String, dynamic>?),
+        json['providers'] as Map<String, dynamic>?,
+      ),
       similar: similarList,
       isSeen: json['is_seen'] as bool? ?? false,
       isLiked: json['is_liked'] as bool? ?? false,
@@ -263,6 +269,5 @@ class MovieDetail extends Movie {
 
   bool get hasBackdrop => backdropPath != null && backdropPath!.isNotEmpty;
 
-  String get directorsDisplay =>
-      directors.map((d) => d.name).join(', ');
+  String get directorsDisplay => directors.map((d) => d.name).join(', ');
 }

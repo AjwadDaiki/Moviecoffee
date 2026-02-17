@@ -2,18 +2,19 @@ import 'package:flutter/material.dart';
 import '../charts/gauge_painter.dart';
 import '../../theme/coffee_colors.dart';
 
-/// Widget gauge circulaire pour afficher le temps de visionnage
-/// Amélioration : Animation fluide + formatage élégant du temps + gradient
+/// Circular gauge for watch time with animated progress.
 class WatchTimeGauge extends StatefulWidget {
   final int totalMinutes;
   final String title;
-  final int maxMinutes; // Pour calculer le progress (ex: 10000 min = objectif)
+  final int maxMinutes;
+  final double? completionPercent; // 0..100 if provided
 
   const WatchTimeGauge({
     super.key,
     required this.totalMinutes,
-    this.title = "Temps de visionnage",
-    this.maxMinutes = 10000, // ~167h par défaut
+    this.title = 'Temps de visionnage',
+    this.maxMinutes = 10000,
+    this.completionPercent,
   });
 
   @override
@@ -50,18 +51,21 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
     final remainingMinutes = minutes % 60;
 
     if (hours == 0) {
-      return "${remainingMinutes}min";
-    } else if (remainingMinutes == 0) {
-      return "${hours}h";
-    } else {
-      return "${hours}h ${remainingMinutes}min";
+      return '${remainingMinutes}min';
     }
+    if (remainingMinutes == 0) {
+      return '${hours}h';
+    }
+    return '${hours}h ${remainingMinutes}min';
   }
 
   @override
   Widget build(BuildContext context) {
-    final progress = (widget.totalMinutes / widget.maxMinutes).clamp(0.0, 1.0);
-    final formattedTime = _formatTime(widget.totalMinutes);
+    final hasCompletionPercent = widget.completionPercent != null;
+    final completionPercent = hasCompletionPercent
+        ? widget.completionPercent!.clamp(0.0, 100.0)
+        : ((widget.totalMinutes / widget.maxMinutes).clamp(0.0, 1.0) * 100.0);
+    final progress = (completionPercent / 100.0).clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -70,7 +74,7 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
         borderRadius: BorderRadius.circular(CoffeeColors.cardRadius),
         boxShadow: [
           BoxShadow(
-            color: CoffeeColors.caramelBronze.withValues(alpha: 0.15),
+            color: CoffeeColors.terracotta.withValues(alpha: 0.15),
             blurRadius: 20,
             offset: const Offset(0, 8),
             spreadRadius: -5,
@@ -80,7 +84,6 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Titre
           Text(
             widget.title,
             style: const TextStyle(
@@ -91,15 +94,12 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
             ),
           ),
           const SizedBox(height: 25),
-
-          // Gauge + Label central
           Center(
             child: SizedBox(
               width: 200,
               height: 200,
               child: Stack(
                 children: [
-                  // Gauge animée
                   AnimatedBuilder(
                     animation: _animation,
                     builder: (context, child) {
@@ -109,48 +109,49 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
                           progress: progress,
                           animationProgress: _animation.value,
                           strokeWidth: 22,
-                          showGradient: true,
+                          showGradient: false,
                         ),
                       );
                     },
                   ),
-
-                  // Texte central
                   Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Temps formaté
                         AnimatedBuilder(
                           animation: _animation,
                           builder: (context, child) {
                             final animatedMinutes =
-                                (widget.totalMinutes * _animation.value).toInt();
-                            return Text(
-                              _formatTime(animatedMinutes),
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800,
-                                fontFamily: 'RecoletaAlt',
-                                color: CoffeeColors.caramelBronze,
-                                height: 1.0,
+                                (widget.totalMinutes * _animation.value)
+                                    .toInt();
+                            return SizedBox(
+                              width: 148,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  _formatTime(animatedMinutes),
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w800,
+                                    fontFamily: 'RecoletaAlt',
+                                    color: Color(0xFF4A3529),
+                                    height: 1.0,
+                                  ),
+                                ),
                               ),
                             );
                           },
                         ),
                         const SizedBox(height: 8),
-
-                        // Label descriptif
                         const Text(
-                          "regardé",
+                          'regarde',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                             color: CoffeeColors.moka,
                           ),
                         ),
-
-                        // Afficher le pourcentage d'objectif atteint
                         const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -158,16 +159,20 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: CoffeeColors.caramelBronze.withValues(alpha: 0.1),
+                            color: CoffeeColors.terracotta.withValues(
+                              alpha: 0.1,
+                            ),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            "${(progress * 100).toStringAsFixed(0)}% objectif",
+                            hasCompletionPercent
+                                ? '${completionPercent.toStringAsFixed(0)}% collection vue'
+                                : '${completionPercent.toStringAsFixed(0)}% objectif',
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                               fontFamily: 'RecoletaAlt',
-                              color: CoffeeColors.caramelBronze,
+                              color: CoffeeColors.terracotta,
                             ),
                           ),
                         ),
@@ -178,10 +183,7 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
               ),
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // INITIATIVE : Stats additionnelles
           _buildAdditionalStats(),
         ],
       ),
@@ -203,18 +205,14 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
         children: [
           _buildStatItem(
             icon: Icons.access_time,
-            value: "$totalHours",
-            label: "heures",
+            value: '$totalHours',
+            label: 'heures',
           ),
-          Container(
-            width: 1,
-            height: 30,
-            color: CoffeeColors.creamBorder,
-          ),
+          Container(width: 1, height: 30, color: CoffeeColors.creamBorder),
           _buildStatItem(
             icon: Icons.calendar_today,
             value: totalDays.toStringAsFixed(1),
-            label: "jours",
+            label: 'jours',
           ),
         ],
       ),
@@ -228,7 +226,7 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
   }) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: CoffeeColors.caramelBronze),
+        Icon(icon, size: 18, color: CoffeeColors.terracotta),
         const SizedBox(width: 8),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -244,10 +242,7 @@ class _WatchTimeGaugeState extends State<WatchTimeGauge>
             ),
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: CoffeeColors.moka,
-              ),
+              style: const TextStyle(fontSize: 11, color: CoffeeColors.moka),
             ),
           ],
         ),

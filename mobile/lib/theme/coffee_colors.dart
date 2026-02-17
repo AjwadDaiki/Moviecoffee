@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 /// =============================================================================
 /// COFFEE COLORS - Palette Premium "Coffee Shop"
@@ -188,3 +188,4 @@ class CoffeeColorsDark {
     ),
   ];
 }
+

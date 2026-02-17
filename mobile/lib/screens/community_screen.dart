@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import '../api_service.dart';
 import '../models/models.dart';
 import '../theme/coffee_colors.dart';
 import '../theme/app_theme.dart';
+import '../services/app_i18n.dart';
 import '../widgets/community/friend_card.dart';
 import 'chat_detail_screen.dart';
 import 'search_screen.dart';
@@ -19,7 +21,7 @@ class CommunityScreen extends StatefulWidget {
 }
 
 class _CommunityScreenState extends State<CommunityScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   final _apiService = ApiService();
 
@@ -39,25 +41,40 @@ class _CommunityScreenState extends State<CommunityScreen>
 
   // Auto-refresh
   late final Stream<int> _refreshTimer = Stream<int>.periodic(
-    const Duration(seconds: 15),
+    const Duration(seconds: 20),
     (tick) => tick,
   );
   late final StreamSubscription<int> _refreshSubscription;
   bool _isRefreshing = false;
+  bool _appIsActive = true;
+  int _refreshTick = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
     _loadData();
 
-    // Auto-refresh toutes les 15 secondes
+    // Auto-refresh: uniquement quand l'ecran est visible et l'app active
     _refreshSubscription = _refreshTimer.listen((_) {
-      if (mounted && !_isRefreshing && !_isLoading) {
+      final routeIsCurrent = mounted
+          ? (ModalRoute.of(context)?.isCurrent ?? true)
+          : false;
+      if (mounted &&
+          routeIsCurrent &&
+          _appIsActive &&
+          !_isRefreshing &&
+          !_isLoading) {
         _silentRefresh();
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsActive = state == AppLifecycleState.resumed;
   }
 
   void _onTabChanged() {
@@ -68,6 +85,7 @@ class _CommunityScreenState extends State<CommunityScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshSubscription.cancel();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
@@ -80,40 +98,123 @@ class _CommunityScreenState extends State<CommunityScreen>
     _isRefreshing = true;
 
     try {
-      final results = await Future.wait<dynamic>([
-        _apiService.getMatches(limit: 20).catchError((_) => <MovieMatch>[]),
-        _apiService.getFriendsList().catchError((_) => null),
-        _apiService.getConversations().catchError((_) => <Conversation>[]),
-        _apiService.getUnviewedMatchesCount().catchError((_) => 0),
-        _apiService
-            .getSocialFeed(page: 1, limit: 30)
-            .catchError((_) => <FeedActivity>[]),
-      ]);
+      _refreshTick++;
+      final fullRefresh = _refreshTick % 4 == 0;
+      final activeTab = _tabController.index;
 
-      final matches = results[0] as List<MovieMatch>;
-      final friendsData = results[1] as FriendsData?;
-      final conversations = results[2] as List<Conversation>;
-      final unviewedCount = results[3] as int;
-      final feedActivities = results[4] as List<FeedActivity>;
-
-      if (mounted) {
-        setState(() {
-          _matches = matches;
-          if (friendsData != null) {
-            _friends = friendsData.friends;
-            _friendRequestsReceived = friendsData.requestsReceived;
-            _friendRequestsSent = friendsData.requestsSent;
-          }
-          _conversations = conversations;
-          _unviewedMatchesCount = unviewedCount;
-          _feedActivities = feedActivities;
-        });
+      if (fullRefresh) {
+        await _refreshAllSections();
+      } else if (activeTab == 0) {
+        await _refreshFeedSection();
+      } else if (activeTab == 1) {
+        await _refreshMatchesSection();
+      } else if (activeTab == 2) {
+        await _refreshFriendsSection();
+      } else {
+        await _refreshChatSection();
       }
     } catch (_) {
       // Silencieux
     } finally {
       _isRefreshing = false;
     }
+  }
+
+  Future<void> _refreshAllSections() async {
+    final results = await Future.wait<dynamic>([
+      _apiService.getMatches(limit: 20).catchError((_) => <MovieMatch>[]),
+      _apiService.getFriendsList().catchError((_) => null),
+      _apiService
+          .getConversations(limit: 20)
+          .catchError((_) => <Conversation>[]),
+      _apiService.getUnviewedMatchesCount().catchError((_) => 0),
+      _apiService
+          .getSocialFeed(page: 1, limit: 24)
+          .catchError((_) => <FeedActivity>[]),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _matches = results[0] as List<MovieMatch>;
+      final friendsData = results[1] as FriendsData?;
+      if (friendsData != null) {
+        _friends = friendsData.friends;
+        _friendRequestsReceived = friendsData.requestsReceived;
+        _friendRequestsSent = friendsData.requestsSent;
+      }
+      _conversations = results[2] as List<Conversation>;
+      _unviewedMatchesCount = results[3] as int;
+      _feedActivities = results[4] as List<FeedActivity>;
+    });
+  }
+
+  Future<void> _refreshFeedSection() async {
+    final results = await Future.wait<dynamic>([
+      _apiService
+          .getSocialFeed(page: 1, limit: 24)
+          .catchError((_) => <FeedActivity>[]),
+      _apiService
+          .getConversations(limit: 12)
+          .catchError((_) => <Conversation>[]),
+      _apiService.getUnviewedMatchesCount().catchError((_) => 0),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _feedActivities = results[0] as List<FeedActivity>;
+      _conversations = results[1] as List<Conversation>;
+      _unviewedMatchesCount = results[2] as int;
+    });
+  }
+
+  Future<void> _refreshMatchesSection() async {
+    final results = await Future.wait<dynamic>([
+      _apiService.getMatches(limit: 20).catchError((_) => <MovieMatch>[]),
+      _apiService
+          .getConversations(limit: 12)
+          .catchError((_) => <Conversation>[]),
+      _apiService.getUnviewedMatchesCount().catchError((_) => 0),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _matches = results[0] as List<MovieMatch>;
+      _conversations = results[1] as List<Conversation>;
+      _unviewedMatchesCount = results[2] as int;
+    });
+  }
+
+  Future<void> _refreshFriendsSection() async {
+    final results = await Future.wait<dynamic>([
+      _apiService.getFriendsList().catchError((_) => null),
+      _apiService
+          .getConversations(limit: 12)
+          .catchError((_) => <Conversation>[]),
+      _apiService.getUnviewedMatchesCount().catchError((_) => 0),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      final friendsData = results[0] as FriendsData?;
+      if (friendsData != null) {
+        _friends = friendsData.friends;
+        _friendRequestsReceived = friendsData.requestsReceived;
+        _friendRequestsSent = friendsData.requestsSent;
+      }
+      _conversations = results[1] as List<Conversation>;
+      _unviewedMatchesCount = results[2] as int;
+    });
+  }
+
+  Future<void> _refreshChatSection() async {
+    final results = await Future.wait<dynamic>([
+      _apiService
+          .getConversations(limit: 20)
+          .catchError((_) => <Conversation>[]),
+      _apiService.getUnviewedMatchesCount().catchError((_) => 0),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _conversations = results[0] as List<Conversation>;
+      _unviewedMatchesCount = results[1] as int;
+    });
   }
 
   Future<void> _loadData() async {
@@ -186,12 +287,12 @@ class _CommunityScreenState extends State<CommunityScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Titre avec style unifiÃƒÆ’Ã‚Â©
+          // Titre avec style unifiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Communaute',
+              Text(
+                AppI18n.t('community.title', fallback: 'Communaute'),
                 style: TextStyle(
                   fontFamily: 'RecoletaAlt',
                   fontSize: 30,
@@ -284,6 +385,11 @@ class _CommunityScreenState extends State<CommunityScreen>
   }
 
   Widget _buildTabBar() {
+    final unreadMessages = _conversations.fold<int>(
+      0,
+      (sum, c) => sum + c.unreadCount,
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       height: 48,
@@ -293,27 +399,45 @@ class _CommunityScreenState extends State<CommunityScreen>
           _buildTabChip(
             0,
             Icons.dynamic_feed_rounded,
-            'Feed',
+            AppI18n.t('community.tab.feed', fallback: 'Feed'),
             _feedActivities.length,
           ),
           const SizedBox(width: 10),
-          _buildTabChip(1, Icons.favorite_rounded, 'Matchs', _matches.length),
+          _buildTabChip(
+            1,
+            Icons.favorite_rounded,
+            AppI18n.t('community.tab.matches', fallback: 'Matchs'),
+            _matches.length,
+          ),
           const SizedBox(width: 10),
-          _buildTabChip(2, Icons.people_rounded, 'Amis', _friends.length),
+          _buildTabChip(
+            2,
+            Icons.people_rounded,
+            AppI18n.t('community.tab.friends', fallback: 'Amis'),
+            _friends.length,
+          ),
           const SizedBox(width: 10),
           _buildTabChip(
             3,
             Icons.chat_bubble_rounded,
-            'Chat',
+            AppI18n.t('community.tab.messages', fallback: 'Messages'),
             _conversations.length,
+            unreadIndicatorCount: unreadMessages,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTabChip(int index, IconData icon, String label, int count) {
+  Widget _buildTabChip(
+    int index,
+    IconData icon,
+    String label,
+    int count, {
+    int unreadIndicatorCount = 0,
+  }) {
     final isActive = _tabController.index == index;
+    final showUnreadIndicator = unreadIndicatorCount > 0;
 
     return GestureDetector(
       onTap: () {
@@ -346,6 +470,17 @@ class _CommunityScreenState extends State<CommunityScreen>
               size: 18,
               color: isActive ? Colors.white : AppTheme.textSecondary,
             ),
+            if (showUnreadIndicator) ...[
+              const SizedBox(width: 5),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: isActive ? Colors.white : AppTheme.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
             const SizedBox(width: 8),
             Text(
               label,
@@ -383,6 +518,37 @@ class _CommunityScreenState extends State<CommunityScreen>
     );
   }
 
+  Widget _buildAnimatedListEntry({required int index, required Widget child}) {
+    final capped = index > 6 ? 6 : index;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 220 + (capped * 55)),
+      curve: Curves.easeOutCubic,
+      child: child,
+      builder: (context, contentValue, content) {
+        return Opacity(
+          opacity: contentValue.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, (1 - contentValue) * 16),
+            child: content,
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatDecisionDurationLabel(int minutes) {
+    return _formatDecisionDurationCompact(minutes);
+  }
+
+  String _formatDecisionDurationCompact(int minutes) {
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    if (hours == 0) return '$minutes min';
+    if (mins == 0) return '${hours}h';
+    return '${hours}h${mins.toString().padLeft(2, '0')}';
+  }
+
   // ============================================================================
   // TAB 1: FEED SOCIAL - Design moderne poster-centric
   // ============================================================================
@@ -395,20 +561,26 @@ class _CommunityScreenState extends State<CommunityScreen>
     if (_feedActivities.isEmpty) {
       return _buildEmptyState(
         icon: Icons.dynamic_feed_outlined,
-        title: 'Aucune activite',
-        subtitle: 'Suivez des amis pour voir leur activite!',
+        title: AppI18n.t(
+          'community.empty_activity_title',
+          fallback: 'Aucune activite',
+        ),
+        subtitle: AppI18n.t(
+          'community.empty_activity_subtitle',
+          fallback: 'Suivez des amis pour voir leur activite.',
+        ),
         action: TextButton.icon(
           onPressed: _openSearch,
           icon: Icon(Icons.person_add, color: AppTheme.accent),
           label: Text(
-            'Ajouter des amis',
+            AppI18n.t('community.add_friends', fallback: 'Ajouter des amis'),
             style: TextStyle(color: AppTheme.accent),
           ),
         ),
       );
     }
 
-    final timelineActivities = _buildTimelineActivities();
+    final sourceActivities = _buildFeedSourceActivities();
 
     return RefreshIndicator(
       onRefresh: _loadData,
@@ -418,152 +590,160 @@ class _CommunityScreenState extends State<CommunityScreen>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(top: 8, bottom: 100),
         children: [
-          _buildNewsHeader(timelineActivities),
-          if (timelineActivities.isEmpty)
+          _buildNewsHeader(allActivities: sourceActivities),
+          if (sourceActivities.isEmpty)
             _buildFilteredFeedEmptyState()
           else
-            ..._buildFeedTimeline(timelineActivities),
+            ..._buildFeedTimeline(sourceActivities),
         ],
       ),
     );
   }
 
-  List<FeedActivity> _buildTimelineActivities() {
+  List<FeedActivity> _buildFeedSourceActivities() {
     final activities = _feedActivities.where((activity) {
       return activity.actionType == ActivityType.rated ||
-          activity.actionType == ActivityType.commented;
+          activity.actionType == ActivityType.commented ||
+          activity.actionType == ActivityType.addedWatchlist;
     }).toList();
-
     activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return activities;
   }
 
-  Widget _buildNewsHeader(List<FeedActivity> activities) {
+  Widget _buildNewsHeader({required List<FeedActivity> allActivities}) {
     final now = DateTime.now();
-    final todayCount = activities.where((activity) {
-      final date = activity.createdAt;
-      return date.year == now.year &&
-          date.month == now.month &&
-          date.day == now.day;
-    }).length;
-    final thisWeekCount = activities.where((activity) {
-      return now.difference(activity.createdAt).inDays < 7;
-    }).length;
+    final recent24h = allActivities
+        .where((activity) => now.difference(activity.createdAt).inHours < 24)
+        .length;
+    final activeUsers =
+        allActivities
+            .map((a) => a.username.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final visibleUsers = activeUsers.take(6).toList();
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.95),
-            const Color(0xFFF5EEE4),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: CoffeeColors.creamBorder),
+          boxShadow: [
+            BoxShadow(
+              color: CoffeeColors.espresso.withValues(alpha: 0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+              spreadRadius: -6,
+            ),
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: CoffeeColors.creamBorder),
-        boxShadow: [
-          BoxShadow(
-            color: CoffeeColors.espresso.withValues(alpha: 0.06),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-            spreadRadius: -4,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A3529),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.newspaper_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Fil d\'actualite cine',
-                  style: const TextStyle(
-                    fontFamily: 'RecoletaAlt',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: CoffeeColors.espresso,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppI18n.t(
+                          'community.news_title',
+                          fallback: 'Fil d actualite',
+                        ),
+                        style: TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: CoffeeColors.espresso,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        AppI18n.t(
+                          'community.news_subtitle',
+                          fallback:
+                              'Les derniers films vus, notes et commentaires de vos amis.',
+                        ),
+                        style: TextStyle(
+                          fontFamily: 'RecoletaAlt',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: CoffeeColors.moka,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Text(
-                '${activities.length} posts',
-                style: const TextStyle(
-                  fontFamily: 'RecoletaAlt',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: CoffeeColors.moka,
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A3529).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Color(0xFF4A3529),
+                    size: 20,
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _buildFeedStatPill(
+                  icon: Icons.flash_on_rounded,
+                  label:
+                      '$recent24h ${AppI18n.t('community.recent_count', fallback: 'recents')}',
+                ),
+                const SizedBox(width: 8),
+                _buildFeedStatPill(
+                  icon: Icons.people_rounded,
+                  label:
+                      '${activeUsers.length} ${AppI18n.t('community.active_count', fallback: 'actifs')}',
+                ),
+              ],
+            ),
+            if (visibleUsers.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: visibleUsers.map((username) {
+                  return _buildFeedFriendPill(username);
+                }).toList(),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _buildNewsMetricPill(
-                icon: Icons.today_rounded,
-                label: 'Aujourd\'hui',
-                value: '$todayCount',
-              ),
-              const SizedBox(width: 8),
-              _buildNewsMetricPill(
-                icon: Icons.date_range_rounded,
-                label: '7 jours',
-                value: '$thisWeekCount',
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildNewsMetricPill({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  Widget _buildFeedStatPill({required IconData icon, required String label}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: 0.95),
-            const Color(0xFFF7F1E8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CoffeeColors.creamBorder),
+        color: const Color(0xFFF5ECE2),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: CoffeeColors.caramelBronze),
-          const SizedBox(width: 6),
+          Icon(icon, size: 14, color: const Color(0xFF4A3529)),
+          const SizedBox(width: 5),
           Text(
-            '$label: $value',
+            label,
             style: const TextStyle(
               fontFamily: 'RecoletaAlt',
-              fontSize: 12,
+              fontSize: 11.5,
               fontWeight: FontWeight.w700,
               color: CoffeeColors.espresso,
             ),
@@ -573,21 +753,75 @@ class _CommunityScreenState extends State<CommunityScreen>
     );
   }
 
+  Widget _buildFeedFriendPill(String username) {
+    final palette = <Color>[
+      const Color(0xFF7D5C4A),
+      const Color(0xFF6A4D3E),
+      const Color(0xFF8B6954),
+      const Color(0xFF5E4438),
+    ];
+    final avatarColor = palette[username.hashCode.abs() % palette.length];
+
+    return GestureDetector(
+      onTap: () => _openProfile(username),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppTheme.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: CoffeeColors.creamBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 12,
+              backgroundColor: avatarColor,
+              child: Text(
+                username[0].toUpperCase(),
+                style: GoogleFonts.dmSans(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              username,
+              style: const TextStyle(
+                fontFamily: 'RecoletaAlt',
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: CoffeeColors.espresso,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildFeedTimeline(List<FeedActivity> activities) {
     final widgets = <Widget>[];
-    DateTime? currentDay;
+    DateTime? lastDay;
 
-    for (final activity in activities) {
-      final day = DateTime(
+    for (var i = 0; i < activities.length; i++) {
+      final activity = activities[i];
+      final activityDay = DateTime(
         activity.createdAt.year,
         activity.createdAt.month,
         activity.createdAt.day,
       );
-      if (currentDay == null || !_isSameDay(currentDay, day)) {
-        widgets.add(_buildTimelineDayDivider(day));
-        currentDay = day;
+
+      if (lastDay == null || !_isSameDay(lastDay, activityDay)) {
+        widgets.add(_buildTimelineDayDivider(activityDay));
+        lastDay = activityDay;
       }
-      widgets.add(_buildFeedCard(activity));
+
+      widgets.add(
+        _buildAnimatedListEntry(index: i, child: _buildFeedCard(activity)),
+      );
     }
 
     return widgets;
@@ -632,8 +866,12 @@ class _CommunityScreenState extends State<CommunityScreen>
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
 
-    if (_isSameDay(day, today)) return 'Aujourd\'hui';
-    if (_isSameDay(day, yesterday)) return 'Hier';
+    if (_isSameDay(day, today)) {
+      return AppI18n.t('community.today', fallback: 'Aujourd hui');
+    }
+    if (_isSameDay(day, yesterday)) {
+      return AppI18n.t('community.yesterday', fallback: 'Hier');
+    }
     return '${day.day}/${day.month}/${day.year}';
   }
 
@@ -661,7 +899,10 @@ class _CommunityScreenState extends State<CommunityScreen>
           ),
           const SizedBox(height: 10),
           Text(
-            'Aucune activite recente',
+            AppI18n.t(
+              'community.no_recent_activity',
+              fallback: 'Aucune activite recente',
+            ),
             style: const TextStyle(
               fontFamily: 'RecoletaAlt',
               fontSize: 14,
@@ -671,7 +912,11 @@ class _CommunityScreenState extends State<CommunityScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            'Le fil va se remplir quand vos amis noteront ou commenteront des films.',
+            AppI18n.t(
+              'community.no_recent_activity_subtitle',
+              fallback:
+                  'Le fil se remplit quand vos amis notent, commentent ou marquent des films vus.',
+            ),
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontFamily: 'RecoletaAlt',
@@ -683,7 +928,12 @@ class _CommunityScreenState extends State<CommunityScreen>
           const SizedBox(height: 12),
           TextButton(
             onPressed: _loadData,
-            child: const Text('Actualiser le fil'),
+            child: Text(
+              AppI18n.t(
+                'community.refresh_feed',
+                fallback: 'Actualiser le fil',
+              ),
+            ),
           ),
         ],
       ),
@@ -704,58 +954,41 @@ class _CommunityScreenState extends State<CommunityScreen>
     final engagement = activity.engagement;
     final hasLiked = engagement.userHasLiked;
     final commentPreview = activity.comment?.trim() ?? '';
-
-    // Action label
-    String actionLabel = '';
-    if (activity.actionType == ActivityType.rated && rating != null) {
-      actionLabel = 'a note ${rating.toStringAsFixed(1)}/5';
-    } else if (activity.actionType == ActivityType.commented) {
-      actionLabel = 'a commente';
-    } else if (activity.actionType == ActivityType.rated) {
-      actionLabel = 'a vu';
-    }
+    final activityLabel = _activityLabel(activity);
+    final hasRating = rating != null && rating > 0;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.96),
-            const Color(0xFFF3ECE3),
-          ],
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: CoffeeColors.creamBorder.withValues(alpha: 0.8),
         ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: CoffeeColors.creamBorder),
         boxShadow: [
           BoxShadow(
-            color: CoffeeColors.espresso.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-            spreadRadius: -8,
+            color: CoffeeColors.espresso.withValues(alpha: 0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+            spreadRadius: -6,
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header utilisateur
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: Row(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 GestureDetector(
                   onTap: () => _openProfile(username),
                   child: Container(
                     width: 38,
                     height: 38,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF5A4335), Color(0xFF3D2C21)],
-                      ),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF5A4335),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -786,55 +1019,22 @@ class _CommunityScreenState extends State<CommunityScreen>
                           ),
                         ),
                       ),
-                      if (actionLabel.isNotEmpty)
-                        Row(
-                          children: [
-                            Text(
-                              actionLabel,
-                              style: const TextStyle(
-                                fontFamily: 'RecoletaAlt',
-                                fontSize: 12,
-                                color: CoffeeColors.moka,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            if (rating != null) ...[
-                              const SizedBox(width: 4),
-                              ...List.generate(5, (i) {
-                                final starVal = i + 1;
-                                return Icon(
-                                  starVal <= rating.round()
-                                      ? Icons.star_rounded
-                                      : Icons.star_outline_rounded,
-                                  size: 12,
-                                  color: starVal <= rating.round()
-                                      ? const Color(0xFFFFC107)
-                                      : CoffeeColors.steamMilk,
-                                );
-                              }),
-                            ],
-                          ],
+                      const SizedBox(height: 2),
+                      Text(
+                        '$activityLabel - $timeAgo',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          color: CoffeeColors.moka,
+                          fontWeight: FontWeight.w600,
                         ),
+                      ),
                     ],
-                  ),
-                ),
-                Text(
-                  timeAgo,
-                  style: const TextStyle(
-                    fontFamily: 'RecoletaAlt',
-                    fontSize: 12,
-                    color: CoffeeColors.moka,
-                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
-          ),
-
-          // Poster du film
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: GestureDetector(
+            const SizedBox(height: 10),
+            GestureDetector(
               onTap: movieId > 0
                   ? () {
                       Navigator.push(
@@ -849,262 +1049,237 @@ class _CommunityScreenState extends State<CommunityScreen>
                       );
                     }
                   : null,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: posterUrl != null
-                    ? Stack(
-                        children: [
-                          AspectRatio(
-                            aspectRatio: 1.8,
-                            child: Image.network(
-                              posterUrl,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F1E8),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: CoffeeColors.creamBorder.withValues(alpha: 0.8),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: posterUrl == null
+                          ? Container(
+                              width: 92,
+                              height: 132,
+                              color: const Color(0xFFF1E7DD),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.movie_rounded,
+                                  size: 38,
+                                  color: CoffeeColors.moka,
+                                ),
+                              ),
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: posterUrl,
+                              width: 92,
+                              height: 132,
                               fit: BoxFit.cover,
                               alignment: Alignment.topCenter,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: CoffeeColors.steamMilk,
+                              fadeInDuration: const Duration(milliseconds: 120),
+                              placeholder: (_, __) => Container(
+                                width: 92,
+                                height: 132,
+                                color: const Color(0xFFF1E7DD),
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.8,
+                                      color: CoffeeColors.moka,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (_, __, ___) => Container(
+                                width: 92,
+                                height: 132,
+                                color: const Color(0xFFF1E7DD),
                                 child: const Center(
                                   child: Icon(
                                     Icons.movie_rounded,
-                                    size: 48,
+                                    size: 38,
                                     color: CoffeeColors.moka,
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          // Gradient bottom for title
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              height: 88,
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0x001F140F),
-                                    Color(0x801F140F),
-                                    Color(0xE62D1F14),
-                                  ],
-                                ),
-                              ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            movieTitle,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: CoffeeColors.espresso,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          // Movie title
-                          Positioned(
-                            left: 14,
-                            right: 14,
-                            bottom: 12,
-                            child: Text(
-                              movieTitle,
-                              style: GoogleFonts.dmSans(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                color: Colors.white,
-                                shadows: [
-                                  const Shadow(
-                                    color: Colors.black54,
-                                    blurRadius: 6,
+                          if (hasRating) ...[
+                            const SizedBox(height: 7),
+                            Row(
+                              children: [
+                                ...List.generate(5, (i) {
+                                  final starValue = i + 1;
+                                  return Icon(
+                                    starValue <= rating
+                                        ? Icons.star_rounded
+                                        : starValue - 0.5 <= rating
+                                        ? Icons.star_half_rounded
+                                        : Icons.star_outline_rounded,
+                                    size: 16,
+                                    color: const Color(0xFFB7793D),
+                                  );
+                                }),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${rating.toStringAsFixed(1)}/5',
+                                  style: const TextStyle(
+                                    fontFamily: 'RecoletaAlt',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: CoffeeColors.espresso,
                                   ),
-                                ],
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Container(
-                        height: 120,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              CoffeeColors.latteCream,
-                              CoffeeColors.milkFoam,
-                            ],
-                          ),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.movie_rounded,
-                                size: 36,
-                                color: CoffeeColors.moka,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                movieTitle,
-                                style: GoogleFonts.dmSans(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                  color: CoffeeColors.espresso,
                                 ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-
-          // Actions et extrait du commentaire
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _buildFeedActionPill(
-                      icon: hasLiked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      label: engagement.likesCount > 0
-                          ? _formatCount(engagement.likesCount)
-                          : 'J\'aime',
-                      highlight: hasLiked,
-                      onTap: () => _likeActivity(activity.id),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildFeedActionPill(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      label: engagement.commentsCount > 0
-                          ? _formatCount(engagement.commentsCount)
-                          : 'Commentaires',
-                    ),
-                    const Spacer(),
-                    if (movieId > 0)
-                      _buildFeedActionPill(
-                        icon: Icons.open_in_new_rounded,
-                        label: 'Voir la fiche',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => MovieDetailScreen(
-                                tmdbId: movieId,
-                                posterUrl: posterUrl,
-                                title: movieTitle,
+                              ],
+                            ),
+                          ],
+                          if (commentPreview.isNotEmpty) ...[
+                            const SizedBox(height: 7),
+                            Text(
+                              '"$commentPreview"',
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 13,
+                                color: CoffeeColors.moka,
+                                height: 1.35,
                               ),
                             ),
-                          );
-                        },
+                          ],
+                        ],
                       ),
+                    ),
                   ],
                 ),
-                if (commentPreview.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.96),
-                          const Color(0xFFF8F2EA),
-                        ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _buildFeedActionChip(
+                  icon: hasLiked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  label: _formatCount(engagement.likesCount),
+                  highlight: hasLiked,
+                  onTap: () => _likeActivity(activity.id),
+                ),
+                const SizedBox(width: 8),
+                _buildFeedActionChip(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: _formatCount(engagement.commentsCount),
+                  onTap: () => _commentOnActivity(activity.id),
+                ),
+                const Spacer(),
+                if (movieId > 0)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF4A3529),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
                       ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: CoffeeColors.creamBorder),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      minimumSize: Size.zero,
                     ),
-                    child: RichText(
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '$username ',
-                            style: GoogleFonts.dmSans(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: CoffeeColors.espresso,
-                            ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MovieDetailScreen(
+                            tmdbId: movieId,
+                            posterUrl: posterUrl,
+                            title: movieTitle,
                           ),
-                          TextSpan(
-                            text: commentPreview,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 13,
-                              color: CoffeeColors.espresso,
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                    label: const Text(
+                      'Voir la fiche',
+                      style: TextStyle(
+                        fontFamily: 'RecoletaAlt',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
                       ),
                     ),
                   ),
-                ],
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFeedActionPill({
+  String _activityLabel(FeedActivity activity) {
+    if (activity.actionType == ActivityType.commented) return 'a commente';
+    if (activity.actionType == ActivityType.addedWatchlist) {
+      return 'a ajoute a sa watchlist';
+    }
+    if (activity.actionType == ActivityType.rated &&
+        (activity.rating ?? 0) > 0) {
+      return 'a note';
+    }
+    return 'a vu';
+  }
+
+  Widget _buildFeedActionChip({
     required IconData icon,
     required String label,
     VoidCallback? onTap,
     bool highlight = false,
   }) {
-    final iconColor = highlight
-        ? CoffeeColors.caramelBronze
-        : CoffeeColors.moka;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          gradient: highlight
-              ? LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    CoffeeColors.caramelBronze.withValues(alpha: 0.22),
-                    CoffeeColors.caramelBronze.withValues(alpha: 0.1),
-                  ],
-                )
-              : LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.92),
-                    const Color(0xFFF3EBDD),
-                  ],
-                ),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: highlight
-                ? CoffeeColors.caramelBronze.withValues(alpha: 0.2)
-                : CoffeeColors.creamBorder,
-          ),
+          color: highlight
+              ? const Color(0xFF4A3529).withValues(alpha: 0.14)
+              : const Color(0xFFF3EAE0),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: iconColor),
-            const SizedBox(width: 5),
+            Icon(
+              icon,
+              size: 15,
+              color: highlight ? const Color(0xFF4A3529) : CoffeeColors.moka,
+            ),
+            const SizedBox(width: 4),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'RecoletaAlt',
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: CoffeeColors.espresso,
+                color: highlight ? const Color(0xFF4A3529) : CoffeeColors.moka,
               ),
             ),
           ],
@@ -1130,11 +1305,115 @@ class _CommunityScreenState extends State<CommunityScreen>
 
   Future<void> _likeActivity(String? activityId) async {
     if (activityId == null) return;
+    final index = _feedActivities.indexWhere((a) => a.id == activityId);
+    ActivityEngagement? previous;
+    if (index != -1) {
+      final activity = _feedActivities[index];
+      previous = activity.engagement;
+      final hasLiked = activity.engagement.userHasLiked;
+      final likesCount = activity.engagement.likesCount + (hasLiked ? -1 : 1);
+      final updated = activity.copyWithEngagement(
+        activity.engagement.copyWith(
+          likesCount: likesCount < 0 ? 0 : likesCount,
+          userHasLiked: !hasLiked,
+        ),
+      );
+      setState(() {
+        _feedActivities[index] = updated;
+      });
+    }
+
     try {
       await _apiService.reactToActivity(activityId, 'like');
-      _loadData(); // Recharger les donnees
     } catch (e) {
-      // Silencieux
+      if (index != -1 && previous != null && mounted) {
+        final original = _feedActivities[index].copyWithEngagement(previous);
+        setState(() {
+          _feedActivities[index] = original;
+        });
+      }
+    }
+  }
+
+  Future<void> _commentOnActivity(String? activityId) async {
+    if (activityId == null || !mounted) return;
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(
+          'Reagir',
+          style: TextStyle(
+            fontFamily: 'RecoletaAlt',
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          maxLength: 300,
+          decoration: const InputDecoration(
+            hintText: 'Votre commentaire...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Envoyer'),
+          ),
+        ],
+      ),
+    );
+
+    final commentText = (text ?? '').trim();
+    if (commentText.isEmpty) return;
+
+    final index = _feedActivities.indexWhere((a) => a.id == activityId);
+    ActivityEngagement? previous;
+    if (index != -1) {
+      previous = _feedActivities[index].engagement;
+      final updated = _feedActivities[index].copyWithEngagement(
+        _feedActivities[index].engagement.copyWith(
+          commentsCount: _feedActivities[index].engagement.commentsCount + 1,
+        ),
+      );
+      setState(() {
+        _feedActivities[index] = updated;
+      });
+    }
+
+    try {
+      await _apiService.reactToActivity(
+        activityId,
+        'comment',
+        commentText: commentText,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Commentaire ajoute')));
+    } catch (e) {
+      final previousEngagement = previous;
+      if (index != -1 && previousEngagement != null && mounted) {
+        setState(() {
+          _feedActivities[index] = _feedActivities[index].copyWithEngagement(
+            previousEngagement,
+          );
+        });
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossible d envoyer le commentaire: $e')),
+        );
+      }
     }
   }
 
@@ -1150,8 +1429,14 @@ class _CommunityScreenState extends State<CommunityScreen>
     if (_matches.isEmpty) {
       return _buildEmptyState(
         icon: Icons.favorite_border,
-        title: 'Aucun match pour l\'instant',
-        subtitle: 'Likez des films pour matcher avec vos amis!',
+        title: AppI18n.t(
+          'community.empty_matches_title',
+          fallback: 'Aucun match pour l\'instant',
+        ),
+        subtitle: AppI18n.t(
+          'community.empty_matches_subtitle',
+          fallback: 'Likez des films pour matcher avec vos amis!',
+        ),
       );
     }
 
@@ -1161,7 +1446,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       matchesByUser.putIfAbsent(match.matchedWithUsername, () => []).add(match);
     }
 
-    // Filtrer selon le partenaire sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©
+    // Filtrer selon le partenaire sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©lectionnÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©
     final filteredMatches = _selectedMatchPartner == null
         ? _matches
         : _matches
@@ -1174,7 +1459,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
         children: [
-          // Section: Partenaires cinÃƒÆ’Ã‚Â© (filtre cliquable)
+          // Section: Partenaires cinÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© (filtre cliquable)
           _buildMatchPartnersFilter(matchesByUser),
           const SizedBox(height: 16),
 
@@ -1244,7 +1529,10 @@ class _CommunityScreenState extends State<CommunityScreen>
             )
           else
             ...List.generate(filteredMatches.length, (index) {
-              return _buildModernMatchCard(filteredMatches[index], index);
+              return _buildAnimatedListEntry(
+                index: index,
+                child: _buildModernMatchCard(filteredMatches[index], index),
+              );
             }),
         ],
       ),
@@ -1286,7 +1574,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                   ),
                   SizedBox(height: 2),
                   Text(
-                    'Duree max, categorie ou full alea',
+                    'Filtrer par duree et genre, ou lancer en full alea',
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -1318,7 +1606,10 @@ class _CommunityScreenState extends State<CommunityScreen>
   }
 
   void _showDecisionHelperSheet(List<MovieMatch> matches) {
-    int? selectedMaxDuration;
+    _primeDecisionCache(matches);
+
+    int? selectedDurationValue;
+    bool durationIsMax = true;
     String selectedGenre = 'Toutes';
     bool fullRandom = false;
     bool isPicking = false;
@@ -1335,7 +1626,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       'Fantastique',
       'Horreur',
       'Romance',
-      'Science Fiction',
+      'Science-fiction',
       'Thriller',
     ];
 
@@ -1381,7 +1672,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Choisis des filtres ou active le mode full alea.',
+                        'Choisis un type de duree (min ou max), un genre, ou active le mode full alea.',
                         style: GoogleFonts.dmSans(
                           fontSize: 13,
                           color: CoffeeColors.moka,
@@ -1402,7 +1693,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                           ),
                         ),
                         subtitle: Text(
-                          'Ignore les filtres et tire parmi tous les matchs.',
+                          'Ignore les filtres et pioche parmi tous vos matchs.',
                           style: GoogleFonts.dmSans(
                             fontSize: 12,
                             color: CoffeeColors.moka,
@@ -1413,7 +1704,8 @@ class _CommunityScreenState extends State<CommunityScreen>
                           setModalState(() {
                             fullRandom = value;
                             if (fullRandom) {
-                              selectedMaxDuration = null;
+                              selectedDurationValue = null;
+                              durationIsMax = true;
                               selectedGenre = 'Toutes';
                             }
                           });
@@ -1422,7 +1714,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                       if (!fullRandom) ...[
                         const SizedBox(height: 10),
                         Text(
-                          'Duree max',
+                          'Duree',
                           style: const TextStyle(
                             fontFamily: 'RecoletaAlt',
                             fontSize: 14,
@@ -1436,23 +1728,55 @@ class _CommunityScreenState extends State<CommunityScreen>
                           runSpacing: 8,
                           children: [
                             _buildDecisionChip(
-                              label: 'Sans limite',
-                              isSelected: selectedMaxDuration == null,
+                              label: 'Maximum',
+                              isSelected: durationIsMax,
+                              onTap: () =>
+                                  setModalState(() => durationIsMax = true),
+                            ),
+                            _buildDecisionChip(
+                              label: 'Minimum',
+                              isSelected: !durationIsMax,
+                              onTap: () =>
+                                  setModalState(() => durationIsMax = false),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildDecisionChip(
+                              label: 'Sans filtre',
+                              isSelected: selectedDurationValue == null,
                               onTap: () => setModalState(
-                                () => selectedMaxDuration = null,
+                                () => selectedDurationValue = null,
                               ),
                             ),
                             ...durationOptions.map(
                               (duration) => _buildDecisionChip(
-                                label: '<= ${duration}min',
-                                isSelected: selectedMaxDuration == duration,
+                                label: _formatDecisionDurationLabel(duration),
+                                isSelected: selectedDurationValue == duration,
                                 onTap: () => setModalState(
-                                  () => selectedMaxDuration = duration,
+                                  () => selectedDurationValue = duration,
                                 ),
                               ),
                             ),
                           ],
                         ),
+                        if (selectedDurationValue != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            durationIsMax
+                                ? 'Garde les films jusqu\'a ${_formatDecisionDurationCompact(selectedDurationValue!)}'
+                                : 'Garde les films a partir de ${_formatDecisionDurationCompact(selectedDurationValue!)}',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              color: CoffeeColors.moka,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         Text(
                           'Categorie',
@@ -1491,13 +1815,23 @@ class _CommunityScreenState extends State<CommunityScreen>
                                     (!fullRandom && selectedGenre != 'Toutes')
                                     ? selectedGenre
                                     : null;
-                                final selectedDurationValue = fullRandom
+                                final selectedMinDuration =
+                                    fullRandom ||
+                                        selectedDurationValue == null ||
+                                        durationIsMax
                                     ? null
-                                    : selectedMaxDuration;
+                                    : selectedDurationValue;
+                                final selectedMaxDuration =
+                                    fullRandom ||
+                                        selectedDurationValue == null ||
+                                        !durationIsMax
+                                    ? null
+                                    : selectedDurationValue;
 
                                 final result = await _pickMatchForDecision(
                                   matches,
-                                  maxDuration: selectedDurationValue,
+                                  minDuration: selectedMinDuration,
+                                  maxDuration: selectedMaxDuration,
                                   genre: selectedGenreValue,
                                   fullRandom: fullRandom,
                                 );
@@ -1512,7 +1846,8 @@ class _CommunityScreenState extends State<CommunityScreen>
                                 if (picked == null) {
                                   _showNoDecisionResultDialog(
                                     sourceMatches: matches,
-                                    maxDuration: selectedDurationValue,
+                                    minDuration: selectedMinDuration,
+                                    maxDuration: selectedMaxDuration,
                                     genre: selectedGenreValue,
                                   );
                                   return;
@@ -1523,7 +1858,8 @@ class _CommunityScreenState extends State<CommunityScreen>
                                   sourceMatches: matches,
                                   candidateCount: candidateCount,
                                   fullRandom: fullRandom,
-                                  maxDuration: selectedDurationValue,
+                                  minDuration: selectedMinDuration,
+                                  maxDuration: selectedMaxDuration,
                                   genre: selectedGenreValue,
                                 );
                               },
@@ -1545,7 +1881,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                                     ),
                                   )
                                 : const Text(
-                                    'Lancer la suggestion',
+                                    'Trouver un film',
                                     style: TextStyle(
                                       fontFamily: 'RecoletaAlt',
                                       color: Colors.white,
@@ -1567,6 +1903,17 @@ class _CommunityScreenState extends State<CommunityScreen>
     );
   }
 
+  void _primeDecisionCache(List<MovieMatch> matches) {
+    final warmup = matches
+        .where(
+          (m) => m.movieId > 0 && !_matchDetailsCache.containsKey(m.movieId),
+        )
+        .take(14)
+        .toList();
+    if (warmup.isEmpty) return;
+    unawaited(Future.wait(warmup.map(_getMatchDetail)));
+  }
+
   Widget _buildDecisionChip({
     required String label,
     required bool isSelected,
@@ -1574,7 +1921,9 @@ class _CommunityScreenState extends State<CommunityScreen>
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected
@@ -1602,6 +1951,7 @@ class _CommunityScreenState extends State<CommunityScreen>
 
   Future<Map<String, dynamic>> _pickMatchForDecision(
     List<MovieMatch> matches, {
+    int? minDuration,
     int? maxDuration,
     String? genre,
     bool fullRandom = false,
@@ -1610,33 +1960,53 @@ class _CommunityScreenState extends State<CommunityScreen>
       return {'match': null, 'pool': 0};
     }
 
-    if (fullRandom || (maxDuration == null && genre == null)) {
+    if (fullRandom ||
+        (minDuration == null && maxDuration == null && genre == null)) {
       final picked =
           matches[DateTime.now().microsecondsSinceEpoch % matches.length];
       return {'match': picked, 'pool': matches.length};
     }
 
-    final details = await Future.wait<MovieDetail?>(
-      matches.map((match) async {
-        return _getMatchDetail(match);
-      }),
-    );
+    const maxInspected = 40;
+    final total = matches.length;
+    final inspectCount = total <= maxInspected ? total : maxInspected;
+    final start = DateTime.now().microsecondsSinceEpoch % total;
 
-    final candidates = <MovieMatch>[];
-    for (var i = 0; i < matches.length; i++) {
-      final detail = details[i];
-      if (detail == null) continue;
-
-      if (maxDuration != null && detail.runtime > maxDuration) {
-        continue;
-      }
-      if (genre != null && genre.isNotEmpty) {
-        if (!_movieHasGenre(detail.genres, genre)) {
+    Future<List<MovieMatch>> collectCandidates(List<MovieMatch> pool) async {
+      final details = await Future.wait<MovieDetail?>(
+        pool.map((match) async => _getMatchDetail(match)),
+      );
+      final result = <MovieMatch>[];
+      for (var i = 0; i < pool.length; i++) {
+        final detail = details[i];
+        if (detail == null) continue;
+        if (minDuration != null && detail.runtime < minDuration) {
           continue;
         }
+        if (maxDuration != null && detail.runtime > maxDuration) {
+          continue;
+        }
+        if (genre != null &&
+            genre.isNotEmpty &&
+            !_movieHasGenre(detail.genres, genre)) {
+          continue;
+        }
+        result.add(pool[i]);
       }
+      return result;
+    }
 
-      candidates.add(matches[i]);
+    final inspected = List<MovieMatch>.generate(
+      inspectCount,
+      (i) => matches[(start + i) % total],
+    );
+    final candidates = await collectCandidates(inspected);
+    if (candidates.isEmpty && inspectCount < total) {
+      final remaining = List<MovieMatch>.generate(
+        total - inspectCount,
+        (i) => matches[(start + inspectCount + i) % total],
+      );
+      candidates.addAll(await collectCandidates(remaining));
     }
 
     if (candidates.isEmpty) {
@@ -1687,6 +2057,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     required List<MovieMatch> sourceMatches,
     required int candidateCount,
     required bool fullRandom,
+    int? minDuration,
     int? maxDuration,
     String? genre,
   }) {
@@ -1722,6 +2093,7 @@ class _CommunityScreenState extends State<CommunityScreen>
               Text(
                 _buildDecisionSummary(
                   fullRandom: fullRandom,
+                  minDuration: minDuration,
                   maxDuration: maxDuration,
                   genre: genre,
                   candidateCount: candidateCount,
@@ -1878,15 +2250,16 @@ class _CommunityScreenState extends State<CommunityScreen>
 
   void _showNoDecisionResultDialog({
     required List<MovieMatch> sourceMatches,
+    int? minDuration,
     int? maxDuration,
     String? genre,
   }) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Aucun film pour ces filtres'),
+        title: const Text('Aucun film avec ces filtres'),
         content: Text(
-          'Aucun match ne correspond a ${_buildDecisionSummary(fullRandom: false, maxDuration: maxDuration, genre: genre, candidateCount: 0)}.',
+          'Aucun match ne correspond a ${_buildDecisionSummary(fullRandom: false, minDuration: minDuration, maxDuration: maxDuration, genre: genre, candidateCount: 0)}.',
         ),
         actions: [
           TextButton(
@@ -1909,7 +2282,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                 fullRandom: true,
               );
             },
-            child: const Text('Full alea'),
+            child: const Text('Mode full alea'),
           ),
         ],
       ),
@@ -1918,24 +2291,28 @@ class _CommunityScreenState extends State<CommunityScreen>
 
   String _buildDecisionSummary({
     required bool fullRandom,
+    int? minDuration,
     int? maxDuration,
     String? genre,
     required int candidateCount,
   }) {
     if (fullRandom) {
-      return 'Mode full alea / $candidateCount film${candidateCount > 1 ? 's' : ''} possible${candidateCount > 1 ? 's' : ''}';
+      return 'mode full alea (${candidateCount} film${candidateCount > 1 ? 's' : ''})';
     }
 
     final filters = <String>[];
+    if (minDuration != null) {
+      filters.add('duree min ${_formatDecisionDurationCompact(minDuration)}');
+    }
     if (maxDuration != null) {
-      filters.add('<= $maxDuration min');
+      filters.add('duree max ${_formatDecisionDurationCompact(maxDuration)}');
     }
     if (genre != null && genre.isNotEmpty) {
-      filters.add(genre);
+      filters.add('genre $genre');
     }
 
-    final criteria = filters.isEmpty ? 'sans filtre' : filters.join(' / ');
-    return '$criteria / $candidateCount film${candidateCount > 1 ? 's' : ''}';
+    final criteria = filters.isEmpty ? 'sans filtre' : filters.join(' | ');
+    return '$criteria (${candidateCount} film${candidateCount > 1 ? 's' : ''})';
   }
 
   Widget _buildMatchPartnersFilter(
@@ -2146,7 +2523,7 @@ class _CommunityScreenState extends State<CommunityScreen>
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Poster du film (tappable -> dÃƒÆ’Ã‚Â©tail)
+              // Poster du film (tappable -> dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©tail)
               GestureDetector(
                 onTap: () {
                   if (match.movieId > 0) {
@@ -2267,7 +2644,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                 ),
               ),
 
-              // FlÃƒÆ’Ã‚Â¨che action
+              // FlÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨che action
               Container(
                 width: 36,
                 height: 36,
@@ -2322,9 +2699,9 @@ class _CommunityScreenState extends State<CommunityScreen>
       onRefresh: _loadData,
       child: CustomScrollView(
         slivers: [
-          // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
-          // SECTION: Demandes reÃƒÆ’Ã‚Â§ues (ÃƒÆ’Ã‚Â  accepter)
-          // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â
+          // SECTION: Demandes reÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ues (ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  accepter)
+          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â
           if (hasRequests) ...[
             SliverToBoxAdapter(
               child: Padding(
@@ -2383,9 +2760,9 @@ class _CommunityScreenState extends State<CommunityScreen>
             ),
           ],
 
-          // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
-          // SECTION: Demandes envoyÃƒÆ’Ã‚Â©es (en attente)
-          // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â
+          // SECTION: Demandes envoyÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©es (en attente)
+          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â
           if (hasSentRequests) ...[
             SliverToBoxAdapter(
               child: Padding(
@@ -2433,9 +2810,9 @@ class _CommunityScreenState extends State<CommunityScreen>
             ),
           ],
 
-          // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
-          // SECTION: Mes amis confirmÃƒÆ’Ã‚Â©s
-          // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â
+          // SECTION: Mes amis confirmÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©s
+          // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -2479,17 +2856,28 @@ class _CommunityScreenState extends State<CommunityScreen>
             ),
           ),
 
-          // Liste amis ou ÃƒÆ’Ã‚Â©tat vide
+          // Liste amis ou ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©tat vide
           if (isEmpty)
             SliverFillRemaining(
               child: _buildEmptyState(
                 icon: Icons.people_outline,
-                title: 'Aucun ami',
-                subtitle: 'Ajoutez des amis pour voir leurs activites!',
+                title: AppI18n.t(
+                  'community.empty_friends_title',
+                  fallback: 'Aucun ami',
+                ),
+                subtitle: AppI18n.t(
+                  'community.empty_friends_subtitle',
+                  fallback: 'Ajoutez des amis pour voir leurs activites.',
+                ),
                 action: TextButton.icon(
                   onPressed: _openSearch,
                   icon: const Icon(Icons.search),
-                  label: const Text('Rechercher des amis'),
+                  label: Text(
+                    AppI18n.t(
+                      'community.search_friends',
+                      fallback: 'Rechercher des amis',
+                    ),
+                  ),
                 ),
               ),
             )
@@ -2533,7 +2921,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     );
   }
 
-  // Card pour une demande d'ami reÃƒÆ’Ã‚Â§ue (avec boutons accepter/refuser)
+  // Card pour une demande d'ami reÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ue (avec boutons accepter/refuser)
   Widget _buildFriendRequestCard(Friend request) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -2645,7 +3033,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     );
   }
 
-  // Card pour une demande envoyÃƒÆ’Ã‚Â©e (en attente)
+  // Card pour une demande envoyÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e (en attente)
   Widget _buildPendingRequestCard(Friend request) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -2704,7 +3092,7 @@ class _CommunityScreenState extends State<CommunityScreen>
               ],
             ),
           ),
-          // IcÃƒÆ’Ã‚Â´ne hourglass
+          // IcÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â´ne hourglass
           Icon(Icons.hourglass_empty, color: CoffeeColors.moka, size: 20),
         ],
       ),
@@ -2755,10 +3143,38 @@ class _CommunityScreenState extends State<CommunityScreen>
     }
 
     if (_conversations.isEmpty) {
+      if (_friends.isNotEmpty) {
+        return _buildStartConversationList();
+      }
       return _buildEmptyState(
         icon: Icons.chat_bubble_outline,
-        title: 'Aucune conversation',
-        subtitle: 'Envoyez un message a vos amis!',
+        title: AppI18n.t(
+          'community.empty_messages_title',
+          fallback: 'Aucune conversation',
+        ),
+        subtitle: AppI18n.t(
+          'community.empty_messages_subtitle',
+          fallback: 'Envoyez un message a vos amis.',
+        ),
+        action: GestureDetector(
+          onTap: _loadData,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4A3529),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              AppI18n.t('action.refresh', fallback: 'Actualiser'),
+              style: TextStyle(
+                fontFamily: 'RecoletaAlt',
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
       );
     }
 
@@ -2779,7 +3195,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       onRefresh: _loadData,
       child: CustomScrollView(
         slivers: [
-          // Header avec rÃƒÆ’Ã‚Â©sumÃƒÆ’Ã‚Â©
+          // Header avec rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©sumÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
@@ -2843,14 +3259,17 @@ class _CommunityScreenState extends State<CommunityScreen>
             delegate: SliverChildBuilderDelegate((context, index) {
               final conv = sortedConversations[index];
 
-              return _buildConversationCard(
-                username: conv.username,
-                bio: conv.bio,
-                lastMessage: conv.lastMessageContent,
-                isSent: conv.lastMessageIsSent,
-                timestamp: conv.lastMessageDate,
-                unreadCount: conv.unreadCount,
-                onTap: () => _openChat(conv.username, userBio: conv.bio),
+              return _buildAnimatedListEntry(
+                index: index,
+                child: _buildConversationCard(
+                  username: conv.username,
+                  bio: conv.bio,
+                  lastMessage: conv.lastMessageContent,
+                  isSent: conv.lastMessageIsSent,
+                  timestamp: conv.lastMessageDate,
+                  unreadCount: conv.unreadCount,
+                  onTap: () => _openChat(conv.username, userBio: conv.bio),
+                ),
               );
             }, childCount: sortedConversations.length),
           ),
@@ -2858,6 +3277,112 @@ class _CommunityScreenState extends State<CommunityScreen>
           // Bottom padding
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStartConversationList() {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
+        children: [
+          const Text(
+            'Demarrer une conversation',
+            style: TextStyle(
+              fontFamily: 'RecoletaAlt',
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: CoffeeColors.espresso,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            "Vous n'avez pas encore de fil actif. Ecrivez a un ami pour lancer le chat.",
+            style: TextStyle(
+              fontFamily: 'RecoletaAlt',
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: CoffeeColors.moka,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ..._friends.map(_buildStartConversationTile),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStartConversationTile(Friend friend) {
+    return GestureDetector(
+      onTap: () => _openChat(friend.username, userBio: friend.bio),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border.withValues(alpha: 0.6)),
+          boxShadow: AppTheme.shadowSmall,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A3529),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  friend.initial,
+                  style: const TextStyle(
+                    fontFamily: 'RecoletaAlt',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    friend.username,
+                    style: const TextStyle(
+                      fontFamily: 'RecoletaAlt',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: CoffeeColors.espresso,
+                    ),
+                  ),
+                  if (friend.hasBio)
+                    Text(
+                      friend.bio!,
+                      style: const TextStyle(
+                        fontFamily: 'RecoletaAlt',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: CoffeeColors.moka,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 18,
+              color: CoffeeColors.terracotta,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2874,7 +3399,7 @@ class _CommunityScreenState extends State<CommunityScreen>
     final hasUnread = unreadCount > 0;
     final timeText = _formatTimeAgoDate(timestamp);
 
-    // Couleurs d'avatar variÃƒÆ’Ã‚Â©es par username
+    // Couleurs d'avatar variÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©es par username
     final avatarColors = [
       [CoffeeColors.terracotta, CoffeeColors.caramelBronze],
       [const Color(0xFF967468), const Color(0xFF765446)],
@@ -2889,16 +3414,7 @@ class _CommunityScreenState extends State<CommunityScreen>
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: hasUnread
-                ? [const Color(0xFFF6F0E7), const Color(0xFFEFE2D5)]
-                : [
-                    Colors.white.withValues(alpha: 0.95),
-                    const Color(0xFFF4EDE3),
-                  ],
-          ),
+          color: hasUnread ? const Color(0xFFF6F0E7) : AppTheme.surface,
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: Border.all(
             color: hasUnread
@@ -3030,7 +3546,7 @@ class _CommunityScreenState extends State<CommunityScreen>
             // Badge non lu ou chevron
             if (hasUnread)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFF4A3529),
                   borderRadius: BorderRadius.circular(12),
@@ -3042,14 +3558,25 @@ class _CommunityScreenState extends State<CommunityScreen>
                     ),
                   ],
                 ),
-                child: Text(
-                  '$unreadCount',
-                  style: const TextStyle(
-                    fontFamily: 'RecoletaAlt',
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.mark_email_unread_rounded,
+                      color: Colors.white,
+                      size: 11,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$unreadCount',
+                      style: const TextStyle(
+                        fontFamily: 'RecoletaAlt',
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               )
             else

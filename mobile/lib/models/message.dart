@@ -89,9 +89,27 @@ class ChatMessage {
 
   static DateTime _parseDate(dynamic value) {
     if (value == null) return DateTime.now();
-    if (value is DateTime) return value.toLocal();
+    if (value is DateTime) {
+      if (value.isUtc) return value.toLocal();
+      // Backward compatibility: naive server timestamps are treated as UTC.
+      return DateTime.utc(
+        value.year,
+        value.month,
+        value.day,
+        value.hour,
+        value.minute,
+        value.second,
+        value.millisecond,
+        value.microsecond,
+      ).toLocal();
+    }
     if (value is String) {
-      final parsed = DateTime.tryParse(value);
+      var normalized = value.trim();
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(normalized);
+      if (!hasTimezone) {
+        normalized = '${normalized}Z';
+      }
+      final parsed = DateTime.tryParse(normalized);
       return parsed?.toLocal() ?? DateTime.now();
     }
     return DateTime.now();
@@ -116,17 +134,56 @@ class Conversation {
     this.unreadCount = 0,
   });
 
+  static int _parseUnreadCount(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static String _extractUsername(
+    Map<String, dynamic> json,
+    Map<String, dynamic> user,
+    Map<String, dynamic> lastMsg,
+  ) {
+    final userUsername = user['username']?.toString().trim();
+    if (userUsername != null && userUsername.isNotEmpty) {
+      return userUsername;
+    }
+
+    final fallbackUsername = json['username']?.toString().trim();
+    if (fallbackUsername != null && fallbackUsername.isNotEmpty) {
+      return fallbackUsername;
+    }
+
+    final sender = lastMsg['sender_username']?.toString().trim();
+    if (sender != null && sender.isNotEmpty) return sender;
+
+    final receiver = lastMsg['receiver_username']?.toString().trim();
+    if (receiver != null && receiver.isNotEmpty) return receiver;
+
+    return '';
+  }
+
   factory Conversation.fromJson(Map<String, dynamic> json) {
-    final user = json['user'] as Map<String, dynamic>? ?? {};
-    final lastMsg = json['last_message'] as Map<String, dynamic>? ?? {};
+    final user =
+        (json['user'] as Map?)?.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ) ??
+        <String, dynamic>{};
+    final lastMsg =
+        (json['last_message'] as Map?)?.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ) ??
+        <String, dynamic>{};
+    final username = _extractUsername(json, user, lastMsg);
 
     return Conversation(
-      username: user['username'] as String? ?? '',
-      bio: user['bio'] as String?,
-      lastMessageContent: lastMsg['content'] as String? ?? '',
+      username: username,
+      bio: user['bio']?.toString() ?? json['bio']?.toString(),
+      lastMessageContent: lastMsg['content']?.toString() ?? '',
       lastMessageIsSent: lastMsg['is_sent'] as bool? ?? false,
       lastMessageDate: ChatMessage._parseDate(lastMsg['created_at']),
-      unreadCount: json['unread_count'] as int? ?? 0,
+      unreadCount: _parseUnreadCount(json['unread_count']),
     );
   }
 

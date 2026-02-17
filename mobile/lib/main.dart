@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'theme/app_theme.dart';
 import 'theme/theme_provider.dart';
 import 'widgets/common/animated_background.dart';
 import 'auth_provider.dart';
 import 'auth_screens.dart';
+import 'services/app_language.dart';
+import 'services/app_i18n.dart';
 import 'screens/feed_screen.dart';
 import 'screens/collection_screen.dart';
 import 'screens/stats_screen.dart';
 import 'screens/community_screen.dart';
 import 'screens/onboarding_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppLanguage.initialize();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -39,20 +42,35 @@ class MoovieCoffeeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-
-    return MaterialApp(
-      title: 'MoovieCoffee',
-      debugShowCheckedModeBanner: false,
-      themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      theme: ThemeData(
-        brightness: Brightness.light,
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
-      home: const AuthWrapper(),
+    return ValueListenableBuilder<String>(
+      valueListenable: AppLanguage.listenable,
+      builder: (context, languageCode, _) {
+        return MaterialApp(
+          key: ValueKey<String>('app-lang-$languageCode'),
+          title: 'MoovieCoffee',
+          debugShowCheckedModeBanner: false,
+          locale: Locale(languageCode),
+          supportedLocales: const [
+            Locale('fr'),
+            Locale('en'),
+            Locale('es'),
+            Locale('de'),
+            Locale('it'),
+            Locale('pt'),
+          ],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          themeMode: themeProvider.isDarkMode
+              ? ThemeMode.dark
+              : ThemeMode.light,
+          theme: ThemeData(brightness: Brightness.light, useMaterial3: true),
+          darkTheme: ThemeData(brightness: Brightness.dark, useMaterial3: true),
+          home: const AuthWrapper(),
+        );
+      },
     );
   }
 }
@@ -92,11 +110,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final auth = Provider.of<AuthProvider>(context);
@@ -123,7 +137,6 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
-  late final PageController _pageController;
 
   // Utiliser des clés pour garder l'état des écrans
   final _feedKey = GlobalKey<State>();
@@ -131,26 +144,9 @@ class _MainNavigationState extends State<MainNavigation> {
   final _communityKey = GlobalKey<State>();
   final _statsKey = GlobalKey<State>();
 
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
   void _onTabTap(int index) {
     if (index == _currentIndex) return;
     setState(() => _currentIndex = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   @override
@@ -159,9 +155,8 @@ class _MainNavigationState extends State<MainNavigation> {
       backgroundColor: Colors.transparent,
       extendBody: true,
       body: AnimatedBackground(
-        child: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
+        child: IndexedStack(
+          index: _currentIndex,
           children: [
             FeedScreen(key: _feedKey),
             CollectionScreen(key: _collectionKey),
@@ -186,10 +181,7 @@ class _ModernNavBar extends StatelessWidget {
   final int currentIndex;
   final Function(int) onTap;
 
-  const _ModernNavBar({
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const _ModernNavBar({required this.currentIndex, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -226,25 +218,25 @@ class _ModernNavBar extends StatelessWidget {
               children: [
                 _NavItem(
                   icon: Icons.style_rounded,
-                  label: "Feed",
+                  label: AppI18n.t('nav.feed', fallback: 'Feed'),
                   isActive: currentIndex == 0,
                   onTap: () => onTap(0),
                 ),
                 _NavItem(
                   icon: Icons.collections_bookmark_rounded,
-                  label: "Collection",
+                  label: AppI18n.t('nav.collection', fallback: 'Collection'),
                   isActive: currentIndex == 1,
                   onTap: () => onTap(1),
                 ),
                 _NavItem(
                   icon: Icons.people_rounded,
-                  label: "Communauté",
+                  label: AppI18n.t('nav.community', fallback: 'Community'),
                   isActive: currentIndex == 2,
                   onTap: () => onTap(2),
                 ),
                 _NavItem(
                   icon: Icons.insights_rounded,
-                  label: "Stats",
+                  label: AppI18n.t('nav.stats', fallback: 'Stats'),
                   isActive: currentIndex == 3,
                   onTap: () => onTap(3),
                 ),
@@ -288,23 +280,27 @@ class _NavItem extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: isActive
-                    ? AppTheme.accent.withValues(alpha: 0.2)
+                    ? const Color(0xFFD6C2B4).withValues(alpha: 0.18)
                     : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(
                 icon,
-                color: isActive ? AppTheme.accent : Colors.white54,
+                color: isActive
+                    ? const Color(0xFFE7D7CB)
+                    : const Color(0xFFCAB3A2),
                 size: 24,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 1),
             Text(
               label,
               style: TextStyle(
-                color: isActive ? AppTheme.accent : Colors.white38,
+                color: isActive
+                    ? const Color(0xFFE7D7CB)
+                    : const Color(0xFFCAB3A2),
                 fontSize: 10,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ],
@@ -313,4 +309,3 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
-

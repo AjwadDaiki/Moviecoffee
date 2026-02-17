@@ -278,7 +278,7 @@ class _SearchScreenState extends State<SearchScreen>
                       builder: (context) => MovieDetailScreen(
                         tmdbId: movie.tmdbId,
                         posterUrl: movie.posterPath,
-                        title: movie.title.fr,
+                        title: movie.title.display,
                       ),
                     ),
                   );
@@ -475,7 +475,7 @@ class _MovieSearchCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    movie.title.fr,
+                    movie.title.display,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
